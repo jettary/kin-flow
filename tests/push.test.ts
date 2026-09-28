@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { PGlite } from '@electric-sql/pglite';
-import { randomUUID } from 'node:crypto';
+import { createECDH, randomUUID } from 'node:crypto';
 import webpush from 'web-push';
 import { embedded, migrate, type Database } from '../src/server/db';
 import { createFamily, mutate, leave } from '../src/server/service';
@@ -119,6 +119,25 @@ describe('push event selection and atomic outbox', () => {
     );
     expect(pushEvent({ type: 'income', ownerId: actor.id, notice: true }, false)).toBe('income');
   });
+  it('builds an encrypted VAPID request using the real Web Push library', async () => {
+    const key = createECDH('prime256v1');
+    key.generateKeys();
+    const valid = subscription(endpoint);
+    valid.keys.p256dh = key.getPublicKey().toString('base64url');
+    await subscribe(db, recipient.id, recipient.id, valid);
+    await write('transaction.save', expense());
+    const requests: ReturnType<typeof webpush.generateRequestDetails>[] = [];
+    await deliverPush(db, async (target, payload, options) => {
+      requests.push(webpush.generateRequestDetails(target, payload, options));
+    });
+    expect(requests).toHaveLength(1);
+    expect(requests[0].method).toBe('POST');
+    expect(requests[0].headers['Content-Encoding']).toBe('aes128gcm');
+    expect(requests[0].headers.Authorization).toMatch(/^vapid /);
+    expect(requests[0].body?.toString()).not.toContain('Новая транзакция');
+    expect(await queue()).toHaveLength(0);
+  });
+
   it('queues only after valid save, excludes actor and deduplicates offline retries', async () => {
     await subscribe(
       db,

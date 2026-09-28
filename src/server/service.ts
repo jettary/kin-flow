@@ -3,6 +3,8 @@ import { z } from 'zod';
 import type { DB, Database } from './db';
 import { AppError, requireThat } from './errors';
 import { rates } from './rates';
+import { enqueuePush } from './push';
+import { pushEvent } from '../lib/push';
 import { D, convert, currencyCodes, validAmount, localDate } from '../lib/money';
 import {
   canEdit,
@@ -719,6 +721,11 @@ export async function mutate(database: Database, user: User, familyId: string, m
           'Transaction visibility cannot change. Create a new operation instead.',
         );
       }
+      const event = pushEvent(tx, !!old);
+      if (event)
+        await enqueuePush(db, familyId, user.id, m.id, [
+          { event, changed: !!old || tx.type === 'refund' },
+        ]);
       await audit(
         db,
         familyId,
@@ -758,6 +765,8 @@ export async function mutate(database: Database, user: User, familyId: string, m
         { ...old, deleted: true, version },
         m.baseVersion !== undefined && m.baseVersion !== old.version,
       );
+      const event = pushEvent(old, true);
+      if (event) await enqueuePush(db, familyId, user.id, m.id, [{ event, changed: true }]);
       resultId = old.id;
     } else if (m.command === 'family.update') {
       admin();

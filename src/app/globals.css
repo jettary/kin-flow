@@ -917,6 +917,17 @@ pre {
   gap: 6px;
   align-items: center;
 }
+.page-footer > a,
+.signin-terms a,
+.terms-back {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.page-footer > a:hover,
+.signin-terms a:hover,
+.terms-back:hover {
+  color: var(--pine);
+}
 .mobile-nav {
   display: none;
 }
@@ -1847,6 +1858,63 @@ pre {
   align-items: center;
   justify-content: center;
   margin: 17px 0;
+}
+.signin-terms {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.6;
+  text-align: center;
+}
+.terms-page {
+  min-height: 100vh;
+  padding: 38px 18px 80px;
+}
+.terms-shell {
+  max-width: 760px;
+  margin: 0 auto;
+}
+.terms-back {
+  display: inline-block;
+  color: var(--pine);
+  margin: 0 0 20px 4px;
+}
+.terms-card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  padding: clamp(26px, 6vw, 52px);
+}
+.terms-eyebrow {
+  color: var(--accent);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 2px;
+  margin-bottom: 10px;
+}
+.terms-card h1 {
+  margin-bottom: 16px;
+}
+.terms-intro {
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.7;
+}
+.terms-card section {
+  border-top: 1px solid var(--line);
+  margin-top: 27px;
+  padding-top: 27px;
+}
+.terms-card h2 {
+  margin-bottom: 10px;
+}
+.terms-card section p {
+  line-height: 1.75;
+}
+.terms-card section a {
+  color: var(--pine);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 .demo-entry {
   border-top: 1px solid var(--line);

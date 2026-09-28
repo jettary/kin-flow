@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import type { Entity, Scope, Transaction, TransactionType } from '@/lib/model';
 import { localDate } from '@/lib/money';
 import { api } from '@/lib/offline';
@@ -177,6 +178,10 @@ export default function KinflowApp() {
               <Icon name="lock" size={14} />
               <span>Your personal finances stay visible only to you.</span>
             </div>
+            <p className="signin-terms">
+              KinFlow stores the records you confirm, not verified bank transactions.{' '}
+              <Link href="/terms">Terms of Use</Link>
+            </p>
             {config.demo && (
               <div className="demo-entry">
                 <span>LOCAL DEVELOPMENT</span>
@@ -442,6 +447,7 @@ export default function KinflowApp() {
             <span>
               <Icon name="leaf" size={13} /> A little clarity goes a long way.
             </span>
+            <Link href="/terms">Terms of Use</Link>
             {app.demo && <span>Local demo · Sample data</span>}
             {s?.rates && <span>Rates updated {s.rates.date}</span>}
           </footer>

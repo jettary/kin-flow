@@ -1,3 +1,6 @@
+# NEVER READ `.env.*` files
+With only one exception: `.env.example` is always read, and is never committed.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know

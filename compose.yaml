@@ -1,0 +1,11 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: kinflow
+      POSTGRES_USER: kinflow
+      POSTGRES_PASSWORD: local-development-only
+    ports: ["127.0.0.1:5432:5432"]
+    volumes: ["kinflow-data:/var/lib/postgresql/data"]
+volumes:
+  kinflow-data:

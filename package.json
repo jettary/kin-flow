@@ -1,0 +1,46 @@
+{
+  "name": "kinflow",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "24.x"
+  },
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1",
+    "build": "next build",
+    "start": "next start --hostname 127.0.0.1",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:e2e": "playwright test",
+    "db:migrate": "tsx scripts/migrate.ts",
+    "check": "npm run typecheck && npm test && npm run build",
+    "format": "prettier --write src tests scripts *.ts *.json README.md public/sw.js",
+    "test:production": "npm run build && playwright test -c playwright.production.config.ts"
+  },
+  "dependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "decimal.js": "^10.6.0",
+    "google-auth-library": "11.1.0",
+    "idb": "^8.0.3",
+    "lucide-react": "^0.577.0",
+    "next": "16.3.6",
+    "pg": "^8.16.3",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@electric-sql/pglite-socket": "0.2.11",
+    "@playwright/test": "^1.58.2",
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.16.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "prettier": "3.9.9",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "vitest": "5.0.2"
+  },
+  "type": "module"
+}

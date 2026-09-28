@@ -1,0 +1,7 @@
+node_modules
+.next
+.local
+package-lock.json
+requirements.md
+design.md
+deployment-options.md

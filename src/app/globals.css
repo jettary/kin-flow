@@ -341,7 +341,7 @@ pre {
   border-radius: 10px;
   min-height: 46px;
   padding: 0 15px;
-  color: #7c877e;
+  color: var(--text-secondary);
   font-size: 13px;
 }
 .sidebar nav button.active {
@@ -1516,6 +1516,22 @@ pre {
 }
 .row-controls .text-button {
   font-size: 10px;
+}
+.notification-settings h3 {
+  margin: 24px 0 10px;
+}
+.notification-settings p {
+  color: var(--muted);
+  margin: 10px 0;
+  line-height: 1.6;
+}
+.notification-settings .device-action {
+  margin: 8px 0;
+}
+.notification-settings .checkbox {
+  font-size: 14px;
+  padding: 12px 0;
+  margin: 0;
 }
 .subsection-title {
   margin: 30px 0 14px;

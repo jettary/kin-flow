@@ -1,6 +1,6 @@
 /* Only the public application shell is HTTP cached. API responses, OAuth,
    sessions and financial payloads are deliberately excluded. */
-const CACHE = 'kinflow-shell-v2';
+const CACHE = 'kinflow-shell-v3';
 async function cacheShell() {
   const cache = await caches.open(CACHE);
   const response = await fetch('/');
@@ -92,4 +92,52 @@ self.addEventListener('fetch', (event) => {
           }),
       ),
     );
+});
+
+self.addEventListener('push', (event) => {
+  event.waitUntil(
+    (async () => {
+      let payload;
+      try {
+        payload = event.data?.json();
+      } catch {
+        return;
+      }
+      if (!payload || !/^[a-f0-9-]{36}$/i.test(payload.familyId)) return;
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      for (const client of windows)
+        client.postMessage({ type: 'PUSH_REFRESH', familyId: payload.familyId });
+      // Server presence is the primary suppression mechanism. This covers a tab becoming
+      // visible after the server has already handed the message to the push service.
+      if (windows.some((client) => client.visibilityState === 'visible')) return;
+      await self.registration.showNotification(
+        payload.title === 'Изменение в семейных финансах' ? payload.title : 'Новая транзакция',
+        {
+          icon: '/icon-192.png',
+          badge: '/icon-192.png',
+          tag: payload.notificationId,
+          data: { familyId: payload.familyId },
+        },
+      );
+    })(),
+  );
+});
+
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const familyId = event.notification.data?.familyId;
+  if (typeof familyId !== 'string' || !/^[a-f0-9-]{36}$/i.test(familyId)) return;
+  event.waitUntil(
+    (async () => {
+      const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const client = windows.find((window) => new URL(window.url).pathname === '/');
+      const url = '/?view=shared-history&family=' + encodeURIComponent(familyId);
+      if (client) {
+        await client.navigate(url);
+        await client.focus();
+      } else {
+        await self.clients.openWindow(url);
+      }
+    })(),
+  );
 });

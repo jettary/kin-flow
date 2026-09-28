@@ -39,7 +39,9 @@ Set `DATABASE_URL=postgresql://kinflow:local-development-only@127.0.0.1:5432/kin
 - Permanent personal-data deletion on departure, anonymized shared authorship, preserved shared ledger effects, family/account deletion restrictions, and local cache cleanup on sign-out.
 - Responsive sidebar/bottom navigation, light/dark/system appearance, date format preferences, native keyboard-accessible dialogs and reduced-motion support.
 
-No bank integration, export, attachments, recurring transactions, notifications, drag-and-drop or Quick Entry are included.
+- Opt-in Web Push for shared family transactions, per-member/per-family event preferences, independent device subscriptions, generic lock-screen messages, shared-history links, foreground refresh and a durable delivery queue.
+
+No bank integration, export, attachments, recurring transactions, budget/email notifications, drag-and-drop or Quick Entry are included.
 
 ## Project structure
 
@@ -90,6 +92,37 @@ Use a production build for offline reload tests. The Next.js development runtime
 8. Configure provider backups, error/availability monitoring, database quota alerts, and rate freshness monitoring. Perform a restore into an isolated database and validate permissions and ledger totals before storing important records.
 
 Production does not fall back to embedded storage. A missing `DATABASE_URL` is a configuration error. Local sample data is never automatically added to a deployed database.
+
+## Push notifications
+
+Run migration `003_push_notifications.sql` before deploying this feature. Then configure these server environment variables (none uses `NEXT_PUBLIC_`):
+
+| Variable            | Value                                                                                               |
+| ------------------- | --------------------------------------------------------------------------------------------------- |
+| `VAPID_PUBLIC_KEY`  | Application-owned URL-safe public key; exposed through the authenticated notification settings API. |
+| `VAPID_PRIVATE_KEY` | Matching private key, held only by the server.                                                      |
+| `VAPID_SUBJECT`     | An application-owner contact such as `mailto:you@example.com` or a public HTTPS URL.                |
+| `CRON_SECRET`       | Secret bearer token for `/api/cron/push`, shared with the existing rates cron.                      |
+
+Generate the pair **once**, store it in the deployment's secret manager, and keep the same keys across releases:
+
+```sh
+npx web-push generate-vapid-keys --json
+```
+
+No Firebase account or paid push provider is required. Use separate keys for production and test environments. Do not commit keys or subscription endpoints. Missing VAPID configuration leaves financial workflows and event preferences available, with device opt-in disabled in the UI. After intentional key rotation, disable and re-enable notifications on each device.
+
+Users opt in through **More → Notifications → Enable notifications**. Permission is requested only from this button. New shared purchases default to on; purchase edits/deletions/refunds, transfers/exchanges, and income default to off. Choices belong to the member within the selected family. Disabling a device leaves other devices and family preferences intact. Browser or OS permission revocation may require re-enabling through settings. Subscriptions are tied to the authenticated session: sign-out removes that session's subscriptions; after session expiry and a new sign-in, the user enables the device again. User/family departure deletes pending deliveries through membership references. A maximum of 20 devices is allowed per user.
+
+The server queues notifications in the same transaction as the ledger and idempotency receipt. It sends after commit using Next.js `after()`, never from the browser's optimistic save. Offline mutations use the same path when synced. Only other current family members with matching preferences and active device sessions are eligible; private operations and balance adjustments are excluded. Mixed transfers and shared-source private income can produce only a generic notice. Payloads contain an opaque family ID, delivery ID and one of the two required generic Russian titles; the settings UI remains English. The queue accepts a list of events so a future atomic AI batch can produce one delivery per recipient device, but this does not add AI entry.
+
+Delivery runs immediately after mutations, during ordinary sync/foreground polling, and from the protected `GET /api/cron/push` endpoint. One invocation handles up to 100 messages in pages of 20, with a 60-second route limit, 10-second provider timeout and renewable-on-retry job leases. Network/provider failures retry with exponential delays from 30 seconds up to one hour; pending messages expire after 24 hours. HTTP 404/410 deletes the expired subscription. Membership, preferences, session and foreground status are rechecked before sending. Mutation retries and concurrent workers are deduplicated; a process crash after provider acceptance but before recording success can still repeat a delivery. The stable notification tag limits duplicate visible entries. This is best-effort delivery, not an exactly-once guarantee.
+
+**For retries while all apps are closed, configure an external scheduler to call `/api/cron/push` every minute with `Authorization: Bearer <CRON_SECRET>`.** On a Vercel plan supporting minute-level cron, add `{ "path": "/api/cron/push", "schedule": "* * * * *" }` to the `crons` list in `vercel.json`. The checked-in configuration retains its daily schedule for Hobby compatibility; the existing daily rates cron also attempts queue cleanup/delivery. Without a frequent scheduler, failures retry on the next app request or daily run, so unattended timely retries are not guaranteed. See [Vercel cron limits](https://vercel.com/docs/cron-jobs/usage-and-pricing). Monitor pending outbox age/attempt counts and scheduler failures without logging payloads, endpoints or keys.
+
+A visible subscribed device reports presence and checks family versions every five seconds; changed active history then synchronizes. Presence is tracked per tab and expires after 20 seconds if a browser disappears. Other devices still receive notifications. The service worker also suppresses a late push if a window became visible after dispatch. Browser visibility, network delivery and tab closure can race: stale presence may suppress a notification for up to 20 seconds, and an already accepted provider message cannot be recalled. Safari requires a visible notification for a received Web Push, so repeated last-moment suppression may affect its subscription; server-side presence avoids this in the normal foreground path. These races need real-device validation. See [WebKit's delivery requirements](https://webkit.org/blog/12945/meet-web-push/) and [iPhone/iPad Home Screen support](https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/).
+
+Before release, verify on installed iPhone/iPad, Android and desktop PWAs over HTTPS: explicit opt-in, a second member's shared purchase while closed, foreground refresh without a banner, two devices with one disabled, all four preferences in two families, private operations, offline creation followed by sync, click-through to shared history, and session/membership removal. Automated tests cover event selection, outbox rollback and deduplication, recipient isolation, leases/retries, session/device cleanup, worker events, real API opt-in with a simulated native PushManager, accessibility and responsive settings. They do not claim real APNs/FCM/Firefox delivery or physical-device coverage.
 
 ## Operations and deployment boundaries
 

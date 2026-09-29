@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { after, NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 import { timingSafeEqual } from 'node:crypto';
 import { getDB } from '@/server/db';
@@ -28,7 +28,25 @@ import {
 } from '@/server/service';
 import { refreshRates } from '@/server/rates';
 import { seedDemo } from '@/server/demo';
+import {
+  deliverPush,
+  deviceStatus,
+  presence,
+  pushConfig,
+  pushPreferences,
+  subscribe,
+  unsubscribe,
+} from '@/server/push';
+const schedulePush = (db: Awaited<ReturnType<typeof getDB>>) =>
+  after(async () => {
+    try {
+      await deliverPush(db);
+    } catch {
+      console.error('KinFlow push delivery failed');
+    }
+  });
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 const json = (data: unknown, status = 200) =>
   NextResponse.json(data, {
@@ -58,7 +76,7 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
     if (key === 'config')
       return json({ demo: demoEnabled(), google: !!process.env.GOOGLE_CLIENT_ID });
     const db = await getDB();
-    if (key === 'cron/rates' && method === 'GET') {
+    if ((key === 'cron/rates' || key === 'cron/push') && method === 'GET') {
       const expected = 'Bearer ' + process.env.CRON_SECRET,
         actual = request.headers.get('authorization') || '';
       requireThat(
@@ -68,6 +86,11 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
         'Unauthorized.',
         401,
       );
+      if (key === 'cron/push') {
+        await deliverPush(db);
+        return json({ ok: true });
+      }
+      schedulePush(db);
       const result = await refreshRates(db);
       return json({ updated: !!result, date: result?.date }, result ? 200 : 503);
     }
@@ -90,6 +113,26 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
     }
     const user = await currentUser(db, request);
     requireThat(user, 'Please sign in again.', 401);
+    if (key === 'push/subscription' && method === 'POST')
+      return json(
+        await subscribe(
+          db,
+          user.id,
+          hash(request.cookies.get(sessionCookie)?.value || ''),
+          await body(request),
+        ),
+      );
+    if (key === 'push/subscription' && method === 'DELETE') {
+      await unsubscribe(db, user.id, await body(request));
+      return json({ ok: true });
+    }
+    if (key === 'push/status' && method === 'POST')
+      return json(await deviceStatus(db, user.id, await body(request)));
+    if (key === 'push/presence' && method === 'POST') {
+      await presence(db, user.id, await body(request));
+      schedulePush(db);
+      return json({ families: await listFamilies(db, user.id) });
+    }
     if (key === 'auth/logout' && method === 'POST') {
       const token = request.cookies.get(sessionCookie)?.value;
       await db.query('DELETE FROM sessions WHERE token_hash=$1', [hash(token || '')]);
@@ -139,7 +182,18 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
     if (path[0] === 'families' && path[1]) {
       const familyId = path[1],
         action = path[2];
+      if (action === 'notifications' && (method === 'GET' || method === 'PATCH'))
+        return json({
+          publicKey: pushConfig()?.publicKey || null,
+          preferences: await pushPreferences(
+            db,
+            user.id,
+            familyId,
+            method === 'PATCH' ? await body(request) : undefined,
+          ),
+        });
       if (action === 'sync' && method === 'GET') {
+        schedulePush(db);
         await refreshRates(db);
         return json(
           await readSnapshot(
@@ -154,8 +208,11 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
           ),
         );
       }
-      if (action === 'mutate' && method === 'POST')
-        return json(await mutate(db, user, familyId, await body(request)));
+      if (action === 'mutate' && method === 'POST') {
+        const result = await mutate(db, user, familyId, await body(request));
+        schedulePush(db);
+        return json(result);
+      }
       if (action === 'audit' && path[3] && method === 'GET')
         return json(await getAudit(db, user.id, familyId, path[3]));
       if (action === 'invitations' && method === 'POST')

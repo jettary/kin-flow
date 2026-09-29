@@ -5,6 +5,7 @@ import type { Entity, Scope, Transaction, TransactionType } from '@/lib/model';
 import { localDate } from '@/lib/money';
 import { api } from '@/lib/offline';
 import { useKinflow } from './use-kinflow';
+import { usePush } from './use-push';
 import { Icon, ErrorMessage } from './ui';
 import { BudgetForm, EntityForm, Onboarding, TransactionForm } from './forms';
 import {
@@ -41,6 +42,7 @@ const navigation = [
 export default function KinflowApp() {
   const app = useKinflow(),
     [page, setPage] = useState('home'),
+    [pushFamily, setPushFamily] = useState<string | null>(null),
     [scope, setScope] = useState<Scope>('shared'),
     [dialog, setDialog] = useState<Dialog>(null),
     [toast, setToast] = useState(''),
@@ -49,11 +51,13 @@ export default function KinflowApp() {
       google: false,
     }),
     [loginBusy, setLoginBusy] = useState(false);
+  usePush(app);
   useEffect(() => {
     void api<{ demo: boolean; google: boolean }>('config')
       .then(setConfig)
       .catch(() => {});
     const p = new URLSearchParams(window.location.search);
+    if (p.get('view') === 'shared-history' && p.has('family')) setPushFamily(p.get('family'));
     if (p.has('invite')) localStorage.setItem('kinflow-invite', p.get('invite')!);
     if (p.has('authError')) app.setError(p.get('authError')!);
   }, []);
@@ -63,6 +67,26 @@ export default function KinflowApp() {
     const saved = localStorage.getItem('kinflow-scope-' + app.activeId);
     setScope(saved === 'mine' || saved === 'combined' ? saved : 'shared');
   }, [app.activeId]);
+  useEffect(() => {
+    if (!pushFamily || app.loading || !app.user) return;
+    if (!app.families.some((f) => f.id === pushFamily)) {
+      setToast('You no longer have access to this family.');
+    } else if (app.activeId !== pushFamily) {
+      app.setActiveId(pushFamily);
+      return;
+    } else {
+      setScope('shared');
+      localStorage.setItem('kinflow-scope-' + pushFamily, 'shared');
+      setDialog(null);
+      setPage('activity');
+      void app.sync();
+    }
+    setPushFamily(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('family');
+    url.searchParams.delete('view');
+    window.history.replaceState(null, '', url);
+  }, [pushFamily, app.loading, app.user?.id, app.families, app.activeId]);
   useEffect(() => {
     if (!toast) return;
     const t = setTimeout(() => setToast(''), 5000);

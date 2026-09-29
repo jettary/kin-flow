@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Entity, Family, Mutation, Pending, Snapshot, Transaction, User } from '@/lib/model';
 import { D, convert } from '@/lib/money';
 import * as local from '@/lib/offline';
+import { clearPushOnLogout } from '@/lib/push-client';
 function applyPending(snapshot: Snapshot, queue: Pending[]): Snapshot {
   const entities = structuredClone(snapshot.entities),
     transactions = structuredClone(snapshot.transactions);
@@ -336,6 +337,7 @@ export function useKinflow() {
       return;
     localStorage.setItem('kinflow-logout-pending', '1');
     invalidate();
+    await clearPushOnLogout();
     await local.clearCache();
     if (navigator.onLine) {
       try {

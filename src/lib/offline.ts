@@ -80,12 +80,18 @@ export class APIError extends Error {
     super(message);
   }
 }
-export async function api<T = unknown>(url: string, method = 'GET', body?: unknown): Promise<T> {
+export async function api<T = unknown>(
+  url: string,
+  method = 'GET',
+  body?: unknown,
+  signal?: AbortSignal,
+): Promise<T> {
   const response = await fetch('/api/' + url, {
     method,
     headers: body ? { 'Content-Type': 'application/json' } : undefined,
     body: body ? JSON.stringify(body) : undefined,
     cache: 'no-store',
+    signal,
   });
   const result = await response.json();
   if (!response.ok) throw new APIError(response.status, result.error || 'Request failed.');

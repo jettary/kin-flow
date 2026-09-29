@@ -228,7 +228,7 @@ export async function prepareAi(
   await reserveAiRequest(database);
   let raw: unknown;
   try {
-    const model = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
+    const model = process.env.GEMINI_MODEL || 'gemini-3.5-flash-lite';
     const response = await send(
       `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
       {
@@ -255,7 +255,7 @@ export async function prepareAi(
           generationConfig: {
             responseMimeType: 'application/json',
             responseSchema,
-            temperature: 0.1,
+            temperature: 1,
             maxOutputTokens: 8192,
           },
         }),

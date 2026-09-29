@@ -4,7 +4,8 @@ import type { DB, Database } from './db';
 import { AppError, requireThat } from './errors';
 import { rates } from './rates';
 import { enqueuePush } from './push';
-import { pushEvent } from '../lib/push';
+import { pushEvent, type PushEvent } from '../lib/push';
+import { AI_MAX_ENTRIES } from '../lib/ai';
 import { D, convert, currencyCodes, validAmount, localDate } from '../lib/money';
 import {
   canEdit,
@@ -354,7 +355,19 @@ export async function readSnapshot(
     };
   });
 }
+type PushOperation = { event: PushEvent; changed: boolean };
+
 export async function mutate(database: Database, user: User, familyId: string, mutation: Mutation) {
+  return database.transaction((db) => applyMutation(db, user, familyId, mutation));
+}
+
+async function applyMutation(
+  db: DB,
+  user: User,
+  familyId: string,
+  mutation: Mutation,
+  batchEvents?: PushOperation[],
+) {
   const m = z
     .object({
       id: uuid,
@@ -363,477 +376,540 @@ export async function mutate(database: Database, user: User, familyId: string, m
       baseVersion: z.number().int().nonnegative().optional(),
     })
     .parse(mutation);
-  return database.transaction(async (db) => {
-    const family = await membership(db, user.id, familyId, true);
-    const receipt = (
-      await db.query<{ result: { id: string; version: number } }>(
-        'SELECT result FROM mutation_receipts WHERE family_id=$1 AND user_id=$2 AND mutation_id=$3',
-        [familyId, user.id, m.id],
-      )
-    ).rows[0];
-    if (receipt) return receipt.result;
-    const version = family.version + 1;
-    let resultId = m.id;
-    const admin = () =>
-      requireThat(family.role !== 'member', 'Only an owner or admin can do this.', 403);
-    if (m.command === 'entity.save') {
-      const v = entitySchema.parse(m.input);
-      const old = v.id ? await getEntity(db, user.id, familyId, v.id) : null;
-      if (old) {
-        requireThat(canManage(old, family.role, user.id), 'You cannot change this item.', 403);
-        requireThat(
-          old.kind === v.kind && old.ownerId === v.ownerId,
-          'Kind and visibility cannot change.',
-        );
-      } else
-        requireThat(
-          v.ownerId === user.id || (!v.ownerId && family.role !== 'member'),
-          'You cannot create this item.',
-          403,
-        );
-      const id = old?.id || m.id;
-      resultId = id;
-      if (!old)
-        requireThat(
-          !(
-            await db.query(
-              'SELECT id FROM entities WHERE id=$1 UNION ALL SELECT id FROM transactions WHERE id=$1',
-              [id],
-            )
-          ).rows.length,
-          'This operation ID has already been used.',
-          409,
-        );
-      if (v.kind === 'account') {
-        requireThat(v.currency, 'Select an account currency.');
-        requireThat(!old || old.currency === v.currency, 'Account currency cannot change.');
-        requireThat(
-          validAmount(v.openingBalance || '0', v.currency, true),
-          'Invalid opening balance.',
-        );
-      }
-      const e: Entity = {
-        ...old,
-        ...v,
-        id,
-        familyId,
-        ownerId: v.ownerId,
-        archived: v.archived ?? old?.archived ?? false,
-        order: old?.order ?? Date.now(),
-        version,
-      };
-      if (old) {
-        e.openingBalance = old.openingBalance;
-        e.openingDate = old.openingDate;
-      } else if (v.kind === 'account') {
-        e.openingDate = v.openingDate || localDate(family.timezone);
-        e.included = v.included ?? true;
-      }
-      await putEntity(db, e);
-      if (!old && v.kind === 'account')
-        await writeLedger(db, familyId, id, null, v.openingBalance || '0', true);
-      await audit(
-        db,
-        familyId,
-        user.id,
-        id,
-        e.ownerId,
-        old ? 'Item updated' : 'Item created',
-        old,
-        e,
-      );
-    } else if (m.command === 'entity.delete') {
-      const e = await getEntity(db, user.id, familyId, m.input.id);
-      requireThat(canManage(e, family.role, user.id), 'You cannot delete this item.', 403);
-      const used = (
-        await db.query(
-          "SELECT id FROM transactions WHERE family_id=$1 AND (data->>'accountId'=$2 OR data->>'toAccountId'=$2 OR data->>'categoryId'=$2) LIMIT 1",
-          [familyId, e.id],
-        )
-      ).rows.length;
-      const retainedLedger =
-        e.kind === 'account'
-          ? (
-              await db.query(
-                'SELECT id FROM ledger WHERE account_id=$1 AND opening=false LIMIT 1',
-                [e.id],
-              )
-            ).rows.length
-          : 0;
-      requireThat(!used && !retainedLedger, 'This item has history. Archive it instead.');
-      await db.query('DELETE FROM entities WHERE family_id=$1 AND id=$2', [familyId, e.id]);
-      await db.query(
-        "DELETE FROM entities WHERE family_id=$1 AND kind='budget' AND data->>'categoryId'=$2",
-        [familyId, e.id],
-      );
-      await audit(db, familyId, user.id, e.id, e.ownerId, 'Item deleted', e, null);
-      resultId = e.id;
-    } else if (m.command === 'entity.move') {
-      const v = z.object({ id: uuid, direction: z.enum(['up', 'down']) }).parse(m.input);
-      const e = await getEntity(db, user.id, familyId, v.id);
-      requireThat(canManage(e, family.role, user.id), 'You cannot reorder this item.', 403);
-      const list = (await getEntities(db, user.id, familyId)).filter(
-        (x) => x.kind === e.kind && x.ownerId === e.ownerId,
-      );
-      const index = list.findIndex((x) => x.id === e.id),
-        other = list[index + (v.direction === 'up' ? -1 : 1)];
-      if (other) {
-        [list[index], list[index + (v.direction === 'up' ? -1 : 1)]] = [other, e];
-        for (let i = 0; i < list.length; i++)
-          await putEntity(db, { ...list[i], order: i, version });
-      }
-      resultId = e.id;
-      await audit(db, familyId, user.id, e.id, e.ownerId, 'Order changed', null, v);
-    } else if (m.command === 'budget.save') {
-      const v = z
-        .object({
-          categoryId: uuid,
-          limit: decimal,
-          currency,
-          archived: z.boolean().default(false),
-        })
-        .parse(m.input);
-      const category = await getEntity(db, user.id, familyId, v.categoryId, 'expense');
-      requireThat(canManage(category, family.role, user.id), 'You cannot change this budget.', 403);
-      requireThat(validAmount(v.limit, v.currency), 'Invalid budget limit.');
-      const effectiveMonth = localDate(family.timezone).slice(0, 7);
-      const old = (await getEntities(db, user.id, familyId)).find(
-        (e) =>
-          e.kind === 'budget' &&
-          e.categoryId === category.id &&
-          e.effectiveMonth === effectiveMonth,
-      );
-      if (!old)
-        requireThat(
-          !(
-            await db.query(
-              'SELECT id FROM entities WHERE id=$1 UNION ALL SELECT id FROM transactions WHERE id=$1',
-              [m.id],
-            )
-          ).rows.length,
-          'This operation ID has already been used.',
-          409,
-        );
-      const e: Entity = {
-        id: old?.id || m.id,
-        familyId,
-        ownerId: category.ownerId,
-        kind: 'budget',
-        name: category.name,
-        icon: category.icon,
-        order: category.order,
-        version,
-        effectiveMonth,
-        ...v,
-      };
-      await putEntity(db, e);
-      await audit(db, familyId, user.id, e.id, e.ownerId, 'Budget changed', old, e);
-      resultId = e.id;
-    } else if (m.command === 'transaction.save') {
-      const v = transactionSchema.parse(m.input);
-      const old = v.id ? await getTx(db, user.id, familyId, v.id) : null;
-      if (old) {
-        requireThat(canEdit(old, family.role, user.id), 'You cannot edit this transaction.', 403);
-        requireThat(v.type === old.type, 'Transaction type cannot change.');
-        requireThat(old.type !== 'refund', 'Delete the refund and record a replacement.');
-      }
-      const id = old?.id || m.id;
-      resultId = id;
-      if (!old)
-        requireThat(
-          !(
-            await db.query(
-              'SELECT id FROM entities WHERE id=$1 UNION ALL SELECT id FROM transactions WHERE id=$1',
-              [id],
-            )
-          ).rows.length,
-          'This operation ID has already been used.',
-          409,
-        );
-      const linked = (
-        await db.query(
-          "SELECT id FROM transactions WHERE family_id=$1 AND data->>'originalId'=$2 AND deleted=false",
-          [familyId, id],
-        )
-      ).rows;
+  const family = await membership(db, user.id, familyId, true);
+  const receipt = (
+    await db.query<{ result: { id: string; version: number } }>(
+      'SELECT result FROM mutation_receipts WHERE family_id=$1 AND user_id=$2 AND mutation_id=$3',
+      [familyId, user.id, m.id],
+    )
+  ).rows[0];
+  if (receipt) return receipt.result;
+  const version = family.version + 1;
+  let resultId = m.id;
+  const admin = () =>
+    requireThat(family.role !== 'member', 'Only an owner or admin can do this.', 403);
+  if (m.command === 'entity.save') {
+    const v = entitySchema.parse(m.input);
+    const old = v.id ? await getEntity(db, user.id, familyId, v.id) : null;
+    if (old) {
+      requireThat(canManage(old, family.role, user.id), 'You cannot change this item.', 403);
       requireThat(
-        !linked.length,
-        'This purchase has refunds. Delete its refunds before editing the purchase.',
+        old.kind === v.kind && old.ownerId === v.ownerId,
+        'Kind and visibility cannot change.',
       );
-      let original: Transaction | null = null;
-      if (v.type === 'refund') {
-        original = await getTx(db, user.id, familyId, v.originalId);
-        requireThat(
-          original.type === 'expense' && canEdit(original, family.role, user.id),
-          'This purchase cannot be refunded.',
-          403,
-        );
-        requireThat(v.date >= original.date, 'A refund cannot precede its purchase.');
-        v.accountId = original.accountId;
-        v.categoryId = original.categoryId;
-        v.currency = (
-          await getEntity(db, user.id, familyId, original.accountId, 'account')
-        ).currency!;
-        v.accountAmount = v.amount;
-      }
-      const account = await getEntity(db, user.id, familyId, v.accountId, 'account');
+    } else
       requireThat(
-        !account.archived || !!original || old?.accountId === account.id,
-        'This account is archived.',
+        v.ownerId === user.id || (!v.ownerId && family.role !== 'member'),
+        'You cannot create this item.',
+        403,
       );
-      let destination: Entity | null = null,
-        category: Entity | null = null;
-      if (v.type === 'transfer') {
-        destination = await getEntity(db, user.id, familyId, v.toAccountId, 'account');
-        requireThat(account.id !== destination.id, 'Choose two different accounts.');
-        requireThat(
-          !destination.archived || old?.toAccountId === destination.id,
-          'The destination is archived.',
-        );
-      }
-      if (['expense', 'income', 'refund'].includes(v.type)) {
-        category = await getEntity(
-          db,
-          user.id,
-          familyId,
-          v.categoryId,
-          v.type === 'income' ? 'source' : 'expense',
-        );
-        requireThat(
-          !category.archived || !!original || old?.categoryId === category.id,
-          'This category is archived.',
-        );
-        requireThat(
-          category.ownerId === account.ownerId ||
-            (v.type === 'income' && !category.ownerId && account.ownerId === user.id),
-          'Choose a category with matching visibility.',
-        );
-      }
-      const ownerId = account.ownerId || destination?.ownerId || null;
-      const notice =
-        (v.type === 'income' && !!account.ownerId && !category?.ownerId) ||
-        (v.type === 'transfer' && account.ownerId !== destination?.ownerId);
-      const amount = v.amount;
-      requireThat(
-        validAmount(amount, v.currency, v.type === 'adjustment') &&
-          (v.type === 'adjustment' || D(amount).gt(0)),
-        'Enter a valid amount for this currency.',
-      );
-      const accountAmount = v.currency === account.currency ? amount : v.accountAmount;
-      requireThat(
-        accountAmount &&
-          validAmount(accountAmount, account.currency!, v.type === 'adjustment') &&
-          (v.type === 'adjustment' || D(accountAmount).gt(0)),
-        'Enter the actual account amount.',
-      );
-      if (v.type === 'transfer' || v.type === 'adjustment')
-        requireThat(v.currency === account.currency, 'Use the source account currency.');
-      if (v.type === 'adjustment')
-        requireThat(v.comment.trim(), 'A reason is required for an adjustment.');
-      let toAmount: string | undefined;
-      if (destination) {
-        toAmount = destination.currency === account.currency ? accountAmount : v.toAmount;
-        requireThat(
-          toAmount && validAmount(toAmount, destination.currency!) && D(toAmount).gt(0),
-          'Enter the actual amount received.',
-        );
-      }
-      if (original) {
-        const refunds = (
-          await db.query<{ data: Transaction }>(
-            "SELECT data FROM transactions WHERE family_id=$1 AND data->>'originalId'=$2 AND deleted=false",
-            [familyId, original.id],
-          )
-        ).rows;
-        const refunded = refunds.reduce((acc, r) => acc.plus(r.data.accountAmount!), D());
-        requireThat(
-          refunded.plus(accountAmount).lte(original.accountAmount!),
-          'Refund exceeds the unrefunded amount.',
-        );
-      }
-      // Preserve historical reporting rates on edits; a new market quote must not rewrite old totals.
-      let book = old?.rates || (await rates(db));
-      if (!old && v.rateTimestamp && book?.fetchedAt !== v.rateTimestamp) {
-        const stored = (
-          await db.query<{ data: import('../lib/model').RateBook }>(
-            'SELECT data FROM rate_snapshots WHERE fetched_at=$1',
-            [v.rateTimestamp],
-          )
-        ).rows[0];
-        requireThat(
-          stored,
-          'The saved exchange rate is unavailable. Re-enter the transaction with a reporting amount.',
-        );
-        book = stored.data;
-      }
-      const baseAmount =
-        convert(accountAmount, account.currency!, family.currency, book) ?? v.baseAmount;
-      requireThat(
-        baseAmount !== undefined &&
-          validAmount(baseAmount, family.currency, v.type === 'adjustment'),
-        'No reporting rate is available. Enter the amount in the family currency.',
-      );
-      const tx: Transaction = {
-        id,
-        familyId,
-        ownerId,
-        type: v.type,
-        date: v.date,
-        authorId: old ? old.authorId : user.id,
-        version,
-        deleted: false,
-        notice,
-        accountId: account.id,
-        toAccountId: destination?.id,
-        categoryId: category?.id,
-        amount,
-        currency: v.currency,
-        accountAmount,
-        accountCurrency: account.currency,
-        toAmount,
-        baseAmount,
-        baseCurrency: family.currency,
-        comment: v.comment,
-        tags: [...new Set(v.tags.map((t) => t.replace(/^#+/, '').toLowerCase()).filter(Boolean))],
-        originalId: original?.id,
-        rates: book || undefined,
-      };
-      const stored = await db.query(
-        'INSERT INTO transactions(id,family_id,owner_id,author_id,type,date,data,notice,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET owner_id=$3,date=$6,data=$7,notice=$8,version=$9 WHERE transactions.family_id=EXCLUDED.family_id RETURNING id',
-        [id, familyId, ownerId, tx.authorId, v.type, v.date, JSON.stringify(tx), notice, version],
-      );
-      requireThat(stored.rows.length === 1, 'This operation ID has already been used.', 409);
-      await db.query('DELETE FROM ledger WHERE transaction_id=$1', [id]);
-      await writeLedger(
-        db,
-        familyId,
-        account.id,
-        id,
-        D(accountAmount)
-          .mul(['expense', 'transfer'].includes(v.type) ? -1 : 1)
-          .toFixed(),
-      );
-      if (destination) await writeLedger(db, familyId, destination.id, id, toAmount!);
-      // Moving a transaction into personal visibility also makes its prior audit versions private.
-      if (old && old.ownerId !== ownerId) {
-        requireThat(
-          old.ownerId === ownerId,
-          'Transaction visibility cannot change. Create a new operation instead.',
-        );
-      }
-      const event = pushEvent(tx, !!old);
-      if (event)
-        await enqueuePush(db, familyId, user.id, m.id, [
-          { event, changed: !!old || tx.type === 'refund' },
-        ]);
-      await audit(
-        db,
-        familyId,
-        user.id,
-        id,
-        ownerId,
-        old ? 'Transaction edited' : 'Transaction recorded',
-        old,
-        tx,
-        !!old && m.baseVersion !== undefined && old.version !== m.baseVersion,
-      );
-    } else if (m.command === 'transaction.delete') {
-      const old = await getTx(db, user.id, familyId, m.input.id);
-      requireThat(canEdit(old, family.role, user.id), 'You cannot delete this transaction.', 403);
+    const id = old?.id || m.id;
+    resultId = id;
+    if (!old)
       requireThat(
         !(
           await db.query(
-            "SELECT id FROM transactions WHERE family_id=$1 AND data->>'originalId'=$2 AND deleted=false",
-            [familyId, old.id],
+            'SELECT id FROM entities WHERE id=$1 UNION ALL SELECT id FROM transactions WHERE id=$1',
+            [id],
           )
         ).rows.length,
-        'Delete the linked refunds first.',
+        'This operation ID has already been used.',
+        409,
       );
+    if (v.kind === 'account') {
+      requireThat(v.currency, 'Select an account currency.');
+      requireThat(!old || old.currency === v.currency, 'Account currency cannot change.');
+      requireThat(
+        validAmount(v.openingBalance || '0', v.currency, true),
+        'Invalid opening balance.',
+      );
+    }
+    const e: Entity = {
+      ...old,
+      ...v,
+      id,
+      familyId,
+      ownerId: v.ownerId,
+      archived: v.archived ?? old?.archived ?? false,
+      order: old?.order ?? Date.now(),
+      version,
+    };
+    if (old) {
+      e.openingBalance = old.openingBalance;
+      e.openingDate = old.openingDate;
+    } else if (v.kind === 'account') {
+      e.openingDate = v.openingDate || localDate(family.timezone);
+      e.included = v.included ?? true;
+    }
+    await putEntity(db, e);
+    if (!old && v.kind === 'account')
+      await writeLedger(db, familyId, id, null, v.openingBalance || '0', true);
+    await audit(
+      db,
+      familyId,
+      user.id,
+      id,
+      e.ownerId,
+      old ? 'Item updated' : 'Item created',
+      old,
+      e,
+    );
+  } else if (m.command === 'entity.delete') {
+    const e = await getEntity(db, user.id, familyId, m.input.id);
+    requireThat(canManage(e, family.role, user.id), 'You cannot delete this item.', 403);
+    const used = (
       await db.query(
-        'UPDATE transactions SET deleted=true,version=$1 WHERE id=$2 AND family_id=$3',
-        [version, old.id, familyId],
+        "SELECT id FROM transactions WHERE family_id=$1 AND (data->>'accountId'=$2 OR data->>'toAccountId'=$2 OR data->>'categoryId'=$2) LIMIT 1",
+        [familyId, e.id],
+      )
+    ).rows.length;
+    const retainedLedger =
+      e.kind === 'account'
+        ? (
+            await db.query('SELECT id FROM ledger WHERE account_id=$1 AND opening=false LIMIT 1', [
+              e.id,
+            ])
+          ).rows.length
+        : 0;
+    requireThat(!used && !retainedLedger, 'This item has history. Archive it instead.');
+    await db.query('DELETE FROM entities WHERE family_id=$1 AND id=$2', [familyId, e.id]);
+    await db.query(
+      "DELETE FROM entities WHERE family_id=$1 AND kind='budget' AND data->>'categoryId'=$2",
+      [familyId, e.id],
+    );
+    await audit(db, familyId, user.id, e.id, e.ownerId, 'Item deleted', e, null);
+    resultId = e.id;
+  } else if (m.command === 'entity.move') {
+    const v = z.object({ id: uuid, direction: z.enum(['up', 'down']) }).parse(m.input);
+    const e = await getEntity(db, user.id, familyId, v.id);
+    requireThat(canManage(e, family.role, user.id), 'You cannot reorder this item.', 403);
+    const list = (await getEntities(db, user.id, familyId)).filter(
+      (x) => x.kind === e.kind && x.ownerId === e.ownerId,
+    );
+    const index = list.findIndex((x) => x.id === e.id),
+      other = list[index + (v.direction === 'up' ? -1 : 1)];
+    if (other) {
+      [list[index], list[index + (v.direction === 'up' ? -1 : 1)]] = [other, e];
+      for (let i = 0; i < list.length; i++) await putEntity(db, { ...list[i], order: i, version });
+    }
+    resultId = e.id;
+    await audit(db, familyId, user.id, e.id, e.ownerId, 'Order changed', null, v);
+  } else if (m.command === 'budget.save') {
+    const v = z
+      .object({
+        categoryId: uuid,
+        limit: decimal,
+        currency,
+        archived: z.boolean().default(false),
+      })
+      .parse(m.input);
+    const category = await getEntity(db, user.id, familyId, v.categoryId, 'expense');
+    requireThat(canManage(category, family.role, user.id), 'You cannot change this budget.', 403);
+    requireThat(validAmount(v.limit, v.currency), 'Invalid budget limit.');
+    const effectiveMonth = localDate(family.timezone).slice(0, 7);
+    const old = (await getEntities(db, user.id, familyId)).find(
+      (e) =>
+        e.kind === 'budget' && e.categoryId === category.id && e.effectiveMonth === effectiveMonth,
+    );
+    if (!old)
+      requireThat(
+        !(
+          await db.query(
+            'SELECT id FROM entities WHERE id=$1 UNION ALL SELECT id FROM transactions WHERE id=$1',
+            [m.id],
+          )
+        ).rows.length,
+        'This operation ID has already been used.',
+        409,
       );
-      await db.query('DELETE FROM ledger WHERE transaction_id=$1', [old.id]);
-      await audit(
+    const e: Entity = {
+      id: old?.id || m.id,
+      familyId,
+      ownerId: category.ownerId,
+      kind: 'budget',
+      name: category.name,
+      icon: category.icon,
+      order: category.order,
+      version,
+      effectiveMonth,
+      ...v,
+    };
+    await putEntity(db, e);
+    await audit(db, familyId, user.id, e.id, e.ownerId, 'Budget changed', old, e);
+    resultId = e.id;
+  } else if (m.command === 'transaction.save') {
+    const v = transactionSchema.parse(m.input);
+    const old = v.id ? await getTx(db, user.id, familyId, v.id) : null;
+    if (old) {
+      requireThat(canEdit(old, family.role, user.id), 'You cannot edit this transaction.', 403);
+      requireThat(v.type === old.type, 'Transaction type cannot change.');
+      requireThat(old.type !== 'refund', 'Delete the refund and record a replacement.');
+    }
+    const id = old?.id || m.id;
+    resultId = id;
+    if (!old)
+      requireThat(
+        !(
+          await db.query(
+            'SELECT id FROM entities WHERE id=$1 UNION ALL SELECT id FROM transactions WHERE id=$1',
+            [id],
+          )
+        ).rows.length,
+        'This operation ID has already been used.',
+        409,
+      );
+    const linked = (
+      await db.query(
+        "SELECT id FROM transactions WHERE family_id=$1 AND data->>'originalId'=$2 AND deleted=false",
+        [familyId, id],
+      )
+    ).rows;
+    requireThat(
+      !linked.length,
+      'This purchase has refunds. Delete its refunds before editing the purchase.',
+    );
+    let original: Transaction | null = null;
+    if (v.type === 'refund') {
+      original = await getTx(db, user.id, familyId, v.originalId);
+      requireThat(
+        original.type === 'expense' && canEdit(original, family.role, user.id),
+        'This purchase cannot be refunded.',
+        403,
+      );
+      requireThat(v.date >= original.date, 'A refund cannot precede its purchase.');
+      v.accountId = original.accountId;
+      v.categoryId = original.categoryId;
+      v.currency = (
+        await getEntity(db, user.id, familyId, original.accountId, 'account')
+      ).currency!;
+      v.accountAmount = v.amount;
+    }
+    const account = await getEntity(db, user.id, familyId, v.accountId, 'account');
+    requireThat(
+      !account.archived || !!original || old?.accountId === account.id,
+      'This account is archived.',
+    );
+    let destination: Entity | null = null,
+      category: Entity | null = null;
+    if (v.type === 'transfer') {
+      destination = await getEntity(db, user.id, familyId, v.toAccountId, 'account');
+      requireThat(account.id !== destination.id, 'Choose two different accounts.');
+      requireThat(
+        !destination.archived || old?.toAccountId === destination.id,
+        'The destination is archived.',
+      );
+    }
+    if (['expense', 'income', 'refund'].includes(v.type)) {
+      category = await getEntity(
         db,
-        familyId,
         user.id,
-        old.id,
-        old.ownerId,
-        'Transaction deleted',
-        old,
-        { ...old, deleted: true, version },
-        m.baseVersion !== undefined && m.baseVersion !== old.version,
-      );
-      const event = pushEvent(old, true);
-      if (event) await enqueuePush(db, familyId, user.id, m.id, [{ event, changed: true }]);
-      resultId = old.id;
-    } else if (m.command === 'family.update') {
-      admin();
-      const v = z.object({ name: short, timezone }).parse(m.input);
-      await db.query('UPDATE families SET name=$1,timezone=$2 WHERE id=$3', [
-        v.name,
-        v.timezone,
         familyId,
-      ]);
-      await audit(db, familyId, user.id, familyId, null, 'Family settings changed', family, v);
-    } else if (m.command === 'member.role') {
-      admin();
-      const v = z.object({ userId: uuid, role: z.enum(['admin', 'member']) }).parse(m.input);
-      const member = (
-        await db.query<{ role: Role }>(
-          'SELECT role FROM memberships WHERE family_id=$1 AND user_id=$2',
-          [familyId, v.userId],
+        v.categoryId,
+        v.type === 'income' ? 'source' : 'expense',
+      );
+      requireThat(
+        !category.archived || !!original || old?.categoryId === category.id,
+        'This category is archived.',
+      );
+      requireThat(
+        category.ownerId === account.ownerId ||
+          (v.type === 'income' && !category.ownerId && account.ownerId === user.id),
+        'Choose a category with matching visibility.',
+      );
+    }
+    const ownerId = account.ownerId || destination?.ownerId || null;
+    const notice =
+      (v.type === 'income' && !!account.ownerId && !category?.ownerId) ||
+      (v.type === 'transfer' && account.ownerId !== destination?.ownerId);
+    const amount = v.amount;
+    requireThat(
+      validAmount(amount, v.currency, v.type === 'adjustment') &&
+        (v.type === 'adjustment' || D(amount).gt(0)),
+      'Enter a valid amount for this currency.',
+    );
+    const accountAmount = v.currency === account.currency ? amount : v.accountAmount;
+    requireThat(
+      accountAmount &&
+        validAmount(accountAmount, account.currency!, v.type === 'adjustment') &&
+        (v.type === 'adjustment' || D(accountAmount).gt(0)),
+      'Enter the actual account amount.',
+    );
+    if (v.type === 'transfer' || v.type === 'adjustment')
+      requireThat(v.currency === account.currency, 'Use the source account currency.');
+    if (v.type === 'adjustment')
+      requireThat(v.comment.trim(), 'A reason is required for an adjustment.');
+    let toAmount: string | undefined;
+    if (destination) {
+      toAmount = destination.currency === account.currency ? accountAmount : v.toAmount;
+      requireThat(
+        toAmount && validAmount(toAmount, destination.currency!) && D(toAmount).gt(0),
+        'Enter the actual amount received.',
+      );
+    }
+    if (original) {
+      const refunds = (
+        await db.query<{ data: Transaction }>(
+          "SELECT data FROM transactions WHERE family_id=$1 AND data->>'originalId'=$2 AND deleted=false",
+          [familyId, original.id],
+        )
+      ).rows;
+      const refunded = refunds.reduce((acc, r) => acc.plus(r.data.accountAmount!), D());
+      requireThat(
+        refunded.plus(accountAmount).lte(original.accountAmount!),
+        'Refund exceeds the unrefunded amount.',
+      );
+    }
+    // Preserve historical reporting rates on edits; a new market quote must not rewrite old totals.
+    let book = old?.rates || (await rates(db));
+    if (!old && v.rateTimestamp && book?.fetchedAt !== v.rateTimestamp) {
+      const stored = (
+        await db.query<{ data: import('../lib/model').RateBook }>(
+          'SELECT data FROM rate_snapshots WHERE fetched_at=$1',
+          [v.rateTimestamp],
         )
       ).rows[0];
-      requireThat(member && member.role !== 'owner', 'Use Transfer ownership to change the owner.');
-      await db.query('UPDATE memberships SET role=$1 WHERE family_id=$2 AND user_id=$3', [
-        v.role,
-        familyId,
-        v.userId,
-      ]);
-      await audit(db, familyId, user.id, v.userId, null, 'Role changed', member, v);
-    } else if (m.command === 'family.transfer') {
-      requireThat(family.role === 'owner', 'Only the owner can transfer ownership.', 403);
-      const to = uuid.parse(m.input.userId);
-      requireThat(to !== user.id, 'Choose another member.');
       requireThat(
-        (
-          await db.query('SELECT user_id FROM memberships WHERE family_id=$1 AND user_id=$2', [
-            familyId,
-            to,
-          ])
-        ).rows.length,
-        'Member not found.',
+        stored,
+        'The saved exchange rate is unavailable. Re-enter the transaction with a reporting amount.',
       );
-      await db.query("UPDATE memberships SET role='admin' WHERE family_id=$1 AND user_id=$2", [
-        familyId,
-        user.id,
-      ]);
-      await db.query("UPDATE memberships SET role='owner' WHERE family_id=$1 AND user_id=$2", [
-        familyId,
-        to,
-      ]);
-      await audit(
-        db,
-        familyId,
-        user.id,
-        familyId,
-        null,
-        'Ownership transferred',
-        { owner: user.id },
-        { owner: to },
+      book = stored.data;
+    }
+    const baseAmount =
+      convert(accountAmount, account.currency!, family.currency, book) ?? v.baseAmount;
+    requireThat(
+      baseAmount !== undefined && validAmount(baseAmount, family.currency, v.type === 'adjustment'),
+      'No reporting rate is available. Enter the amount in the family currency.',
+    );
+    const tx: Transaction = {
+      id,
+      familyId,
+      ownerId,
+      type: v.type,
+      date: v.date,
+      authorId: old ? old.authorId : user.id,
+      version,
+      deleted: false,
+      notice,
+      accountId: account.id,
+      toAccountId: destination?.id,
+      categoryId: category?.id,
+      amount,
+      currency: v.currency,
+      accountAmount,
+      accountCurrency: account.currency,
+      toAmount,
+      baseAmount,
+      baseCurrency: family.currency,
+      comment: v.comment,
+      tags: [...new Set(v.tags.map((t) => t.replace(/^#+/, '').toLowerCase()).filter(Boolean))],
+      originalId: original?.id,
+      rates: book || undefined,
+    };
+    const stored = await db.query(
+      'INSERT INTO transactions(id,family_id,owner_id,author_id,type,date,data,notice,version) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(id) DO UPDATE SET owner_id=$3,date=$6,data=$7,notice=$8,version=$9 WHERE transactions.family_id=EXCLUDED.family_id RETURNING id',
+      [id, familyId, ownerId, tx.authorId, v.type, v.date, JSON.stringify(tx), notice, version],
+    );
+    requireThat(stored.rows.length === 1, 'This operation ID has already been used.', 409);
+    await db.query('DELETE FROM ledger WHERE transaction_id=$1', [id]);
+    await writeLedger(
+      db,
+      familyId,
+      account.id,
+      id,
+      D(accountAmount)
+        .mul(['expense', 'transfer'].includes(v.type) ? -1 : 1)
+        .toFixed(),
+    );
+    if (destination) await writeLedger(db, familyId, destination.id, id, toAmount!);
+    // Moving a transaction into personal visibility also makes its prior audit versions private.
+    if (old && old.ownerId !== ownerId) {
+      requireThat(
+        old.ownerId === ownerId,
+        'Transaction visibility cannot change. Create a new operation instead.',
       );
-    } else throw new AppError(400, 'Unknown action.');
-    await db.query('UPDATE families SET version=$1 WHERE id=$2', [version, familyId]);
-    const result = { id: resultId, version };
+    }
+    const event = pushEvent(tx, !!old);
+    if (event) {
+      const operation = { event, changed: !!old || tx.type === 'refund' };
+      if (batchEvents) batchEvents.push(operation);
+      else await enqueuePush(db, familyId, user.id, m.id, [operation]);
+    }
+    await audit(
+      db,
+      familyId,
+      user.id,
+      id,
+      ownerId,
+      old ? 'Transaction edited' : 'Transaction recorded',
+      old,
+      tx,
+      !!old && m.baseVersion !== undefined && old.version !== m.baseVersion,
+    );
+  } else if (m.command === 'transaction.delete') {
+    const old = await getTx(db, user.id, familyId, m.input.id);
+    requireThat(canEdit(old, family.role, user.id), 'You cannot delete this transaction.', 403);
+    requireThat(
+      !(
+        await db.query(
+          "SELECT id FROM transactions WHERE family_id=$1 AND data->>'originalId'=$2 AND deleted=false",
+          [familyId, old.id],
+        )
+      ).rows.length,
+      'Delete the linked refunds first.',
+    );
+    await db.query('UPDATE transactions SET deleted=true,version=$1 WHERE id=$2 AND family_id=$3', [
+      version,
+      old.id,
+      familyId,
+    ]);
+    await db.query('DELETE FROM ledger WHERE transaction_id=$1', [old.id]);
+    await audit(
+      db,
+      familyId,
+      user.id,
+      old.id,
+      old.ownerId,
+      'Transaction deleted',
+      old,
+      { ...old, deleted: true, version },
+      m.baseVersion !== undefined && m.baseVersion !== old.version,
+    );
+    const event = pushEvent(old, true);
+    if (event) await enqueuePush(db, familyId, user.id, m.id, [{ event, changed: true }]);
+    resultId = old.id;
+  } else if (m.command === 'family.update') {
+    admin();
+    const v = z.object({ name: short, timezone }).parse(m.input);
+    await db.query('UPDATE families SET name=$1,timezone=$2 WHERE id=$3', [
+      v.name,
+      v.timezone,
+      familyId,
+    ]);
+    await audit(db, familyId, user.id, familyId, null, 'Family settings changed', family, v);
+  } else if (m.command === 'member.role') {
+    admin();
+    const v = z.object({ userId: uuid, role: z.enum(['admin', 'member']) }).parse(m.input);
+    const member = (
+      await db.query<{ role: Role }>(
+        'SELECT role FROM memberships WHERE family_id=$1 AND user_id=$2',
+        [familyId, v.userId],
+      )
+    ).rows[0];
+    requireThat(member && member.role !== 'owner', 'Use Transfer ownership to change the owner.');
+    await db.query('UPDATE memberships SET role=$1 WHERE family_id=$2 AND user_id=$3', [
+      v.role,
+      familyId,
+      v.userId,
+    ]);
+    await audit(db, familyId, user.id, v.userId, null, 'Role changed', member, v);
+  } else if (m.command === 'family.transfer') {
+    requireThat(family.role === 'owner', 'Only the owner can transfer ownership.', 403);
+    const to = uuid.parse(m.input.userId);
+    requireThat(to !== user.id, 'Choose another member.');
+    requireThat(
+      (
+        await db.query('SELECT user_id FROM memberships WHERE family_id=$1 AND user_id=$2', [
+          familyId,
+          to,
+        ])
+      ).rows.length,
+      'Member not found.',
+    );
+    await db.query("UPDATE memberships SET role='admin' WHERE family_id=$1 AND user_id=$2", [
+      familyId,
+      user.id,
+    ]);
+    await db.query("UPDATE memberships SET role='owner' WHERE family_id=$1 AND user_id=$2", [
+      familyId,
+      to,
+    ]);
+    await audit(
+      db,
+      familyId,
+      user.id,
+      familyId,
+      null,
+      'Ownership transferred',
+      { owner: user.id },
+      { owner: to },
+    );
+  } else throw new AppError(400, 'Unknown action.');
+  await db.query('UPDATE families SET version=$1 WHERE id=$2', [version, familyId]);
+  const result = { id: resultId, version };
+  await db.query(
+    'INSERT INTO mutation_receipts(family_id,user_id,mutation_id,result) VALUES($1,$2,$3,$4)',
+    [familyId, user.id, m.id, JSON.stringify(result)],
+  );
+  return result;
+}
+// Every operation uses the same connection and financial validation as manual entry.
+// A failed card rolls back ledger, audit, notifications and all receipts together.
+export async function saveAiBatch(
+  database: Database,
+  user: User,
+  familyId: string,
+  input: unknown,
+) {
+  const batch = z
+    .object({
+      id: uuid,
+      operations: z
+        .array(
+          transactionSchema
+            .omit({ id: true, originalId: true })
+            .extend({
+              type: z.enum(['expense', 'income', 'transfer']),
+            })
+            .strict(),
+        )
+        .min(1)
+        .max(AI_MAX_ENTRIES),
+    })
+    .strict()
+    .parse(input);
+  return database.transaction(async (db) => {
+    await membership(db, user.id, familyId, true);
+    const previous = (
+      await db.query<{ result: { ids: string[]; version: number } }>(
+        'SELECT result FROM ai_batch_receipts WHERE family_id=$1 AND user_id=$2 AND batch_id=$3',
+        [familyId, user.id, batch.id],
+      )
+    ).rows[0];
+    if (previous) return previous.result;
+    const events: PushOperation[] = [];
+    const ids: string[] = [];
+    let version = 0;
+    for (const [index, operation] of batch.operations.entries()) {
+      try {
+        const result = await applyMutation(
+          db,
+          user,
+          familyId,
+          {
+            id: randomUUID(),
+            command: 'transaction.save',
+            input: operation,
+          },
+          events,
+        );
+        ids.push(result.id);
+        version = result.version;
+      } catch (error) {
+        if (error instanceof AppError)
+          throw new AppError(error.status, `Entry ${index + 1}: ${error.message}`);
+        throw error;
+      }
+    }
+    await enqueuePush(db, familyId, user.id, batch.id, events);
+    const result = { ids, version };
     await db.query(
-      'INSERT INTO mutation_receipts(family_id,user_id,mutation_id,result) VALUES($1,$2,$3,$4)',
-      [familyId, user.id, m.id, JSON.stringify(result)],
+      'INSERT INTO ai_batch_receipts(family_id,user_id,batch_id,result) VALUES($1,$2,$3,$4)',
+      [familyId, user.id, batch.id, JSON.stringify(result)],
     );
     return result;
   });
 }
+
 export async function getAudit(db: DB, userId: string, familyId: string, objectId: string) {
   await membership(db, userId, familyId);
   uuid.parse(objectId);
@@ -954,6 +1030,10 @@ async function eraseMembership(db: DB, userId: string, familyId: string) {
     "UPDATE audits SET actor_id=NULL,before_data=before_data-'authorId'-'authorName',after_data=after_data-'authorId'-'authorName' WHERE family_id=$1 AND actor_id=$2",
     [familyId, userId],
   );
+  await db.query('DELETE FROM ai_batch_receipts WHERE family_id=$1 AND user_id=$2', [
+    familyId,
+    userId,
+  ]);
   await db.query('DELETE FROM mutation_receipts WHERE family_id=$1 AND user_id=$2', [
     familyId,
     userId,

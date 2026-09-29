@@ -3521,3 +3521,118 @@ pre {
     padding-bottom: calc(145px + env(safe-area-inset-bottom));
   }
 }
+
+/* AI-assisted entry */
+.entry-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.ai-entry-button {
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 13px;
+  background: var(--surface);
+}
+.ai-entry-button:hover {
+  border-color: var(--accent);
+}
+.ai-entry .muted {
+  color: var(--muted);
+  line-height: 1.6;
+  font-size: 13px;
+}
+.ai-entry a {
+  text-decoration: underline;
+}
+.ai-voice,
+.ai-actions,
+.ai-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.ai-voice > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+.ai-audio-preview {
+  display: grid;
+  gap: 6px;
+}
+.ai-audio-preview audio {
+  width: 100%;
+}
+.ai-card {
+  padding: 20px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: var(--surface);
+}
+.ai-card-header {
+  margin-bottom: 16px;
+}
+.ai-card-header h3 {
+  margin: 0;
+}
+.ai-include {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  min-height: 44px;
+}
+.ai-include input {
+  width: 18px;
+  height: 18px;
+}
+.ai-card-fields {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+  display: grid;
+  gap: 16px;
+}
+.ai-fields-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px;
+}
+.ai-fields-grid .field,
+.ai-fields-grid .currency-picker {
+  min-width: 0;
+}
+.ai-fields-grid select,
+.ai-fields-grid input {
+  max-width: 100%;
+  min-width: 0;
+}
+.ai-excluded .ai-card-fields {
+  opacity: 0.55;
+}
+.ai-duplicate {
+  margin-bottom: 16px;
+}
+@media (max-width: 600px) {
+  .entry-actions {
+    align-self: stretch;
+  }
+  .entry-actions .add-transaction {
+    flex: 1;
+  }
+  .ai-fields-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .ai-card {
+    padding: 14px;
+  }
+}

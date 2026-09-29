@@ -147,11 +147,13 @@ export function Modal({
   children,
   onClose,
   wide = false,
+  closeDisabled = false,
 }: {
   title: string;
   children: ReactNode;
   onClose: () => void;
   wide?: boolean;
+  closeDisabled?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -182,7 +184,12 @@ export function Modal({
             <span className="eyebrow">KINFLOW</span>
             <h2>{title}</h2>
           </div>
-          <button className="icon-button" aria-label="Close" onClick={onClose}>
+          <button
+            className="icon-button"
+            aria-label="Close"
+            onClick={onClose}
+            disabled={closeDisabled}
+          >
             <Icon name="x" />
           </button>
         </div>
@@ -281,14 +288,15 @@ export function ErrorMessage({ message }: { message?: string }) {
 }
 export function BusyButton({
   busy,
+  busyLabel = 'Saving…',
   children,
   ...props
-}: React.ButtonHTMLAttributes<HTMLButtonElement> & { busy?: boolean }) {
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { busy?: boolean; busyLabel?: string }) {
   return (
     <button {...props} disabled={busy || props.disabled}>
       {busy ? (
         <>
-          <Icon name="sync" className="spin" size={17} /> Saving…
+          <Icon name="sync" className="spin" size={17} /> {busyLabel}
         </>
       ) : (
         children

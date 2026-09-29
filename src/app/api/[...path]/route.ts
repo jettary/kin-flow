@@ -25,7 +25,9 @@ import {
   listFamilies,
   mutate,
   readSnapshot,
+  saveAiBatch,
 } from '@/server/service';
+import { acceptAiNotice, aiStatus, prepareAi } from '@/server/ai';
 import { refreshRates } from '@/server/rates';
 import { seedDemo } from '@/server/demo';
 import {
@@ -53,14 +55,32 @@ const json = (data: unknown, status = 200) =>
     status,
     headers: { 'Cache-Control': 'no-store, private', Vary: 'Cookie' },
   });
-async function body(request: NextRequest) {
+async function body(request: NextRequest, limit = 262144) {
   requireThat(
-    Number(request.headers.get('content-length') || 0) <= 262144,
+    Number(request.headers.get('content-length') || 0) <= limit,
     'Request is too large.',
     413,
   );
-  const text = await request.text();
-  requireThat(Buffer.byteLength(text) <= 262144, 'Request is too large.', 413);
+  const reader = request.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (reader) {
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > limit) {
+          await reader.cancel();
+          throw new AppError(413, 'Request is too large.');
+        }
+        chunks.push(value);
+      }
+    } finally {
+      reader.releaseLock();
+    }
+  }
+  const text = Buffer.concat(chunks).toString('utf8');
   try {
     return JSON.parse(text || '{}');
   } catch {
@@ -182,6 +202,19 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
     if (path[0] === 'families' && path[1]) {
       const familyId = path[1],
         action = path[2];
+      if (action === 'ai' && path.length === 4) {
+        if (path[3] === 'status' && method === 'GET')
+          return json(await aiStatus(db, user.id, familyId));
+        if (path[3] === 'accept' && method === 'POST')
+          return json(await acceptAiNotice(db, user.id, familyId));
+        if (path[3] === 'prepare' && method === 'POST')
+          return json(await prepareAi(db, user.id, familyId, await body(request, 2700000)));
+        if (path[3] === 'save' && method === 'POST') {
+          const result = await saveAiBatch(db, user, familyId, await body(request));
+          schedulePush(db);
+          return json(result);
+        }
+      }
       if (action === 'notifications' && (method === 'GET' || method === 'PATCH'))
         return json({
           publicKey: pushConfig()?.publicKey || null,

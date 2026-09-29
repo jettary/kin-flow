@@ -3,7 +3,7 @@ import { PGlite } from '@electric-sql/pglite';
 import { createECDH, randomUUID } from 'node:crypto';
 import webpush from 'web-push';
 import { embedded, migrate, type Database } from '../src/server/db';
-import { createFamily, mutate, leave } from '../src/server/service';
+import { createFamily, mutate, leave, saveAiBatch } from '../src/server/service';
 import {
   deliverPush,
   enqueuePush,
@@ -166,6 +166,22 @@ describe('push event selection and atomic outbox', () => {
     await write('transaction.save', expense(), mutationId);
     await deliverPush(db, sender);
     expect(sender).toHaveBeenCalledTimes(1);
+  });
+  it('sends one matching notification for an atomic AI batch and none after rollback or retry', async () => {
+    const id = randomUUID();
+    await expect(
+      saveAiBatch(db, actor, family.id, { id, operations: [expense(), expense({ amount: '-2' })] }),
+    ).rejects.toThrow();
+    expect(await queue()).toHaveLength(0);
+    const request = { id, operations: [expense(), expense({ amount: '20' })] };
+    await saveAiBatch(db, actor, family.id, request);
+    await saveAiBatch(db, actor, family.id, request);
+    expect(await queue()).toHaveLength(1);
+    const sender = send();
+    await deliverPush(db, sender);
+    expect(sender).toHaveBeenCalledTimes(1);
+    expect(sender.mock.calls[0][1]).not.toContain('secret');
+    expect(await queue()).toHaveLength(0);
   });
   it('honors optional edit, deletion and refund preferences', async () => {
     const tx = await write('transaction.save', expense());

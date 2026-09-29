@@ -140,8 +140,8 @@ export async function presence(db: DB, userId: string, input: unknown) {
   );
 }
 
-// Call inside the financial transaction. An array supports one notification per device
-// for a future atomic AI batch, without implementing AI entry here.
+// Call inside the financial transaction, once for the entire atomic AI batch.
+// Each recipient device gets at most one notification for matching operations.
 export async function enqueuePush(
   db: DB,
   familyId: string,

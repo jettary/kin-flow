@@ -2,8 +2,6 @@
 
 Mobile-first family finance PWA, implementing `requirements.md` and the selected **Calm** design. The interface is English. The original planning documents are preserved.
 
-Русская пошаговая настройка Google OAuth, Neon и Vercel: [SETUP_GOOGLE_VERCEL_RU.md](SETUP_GOOGLE_VERCEL_RU.md).
-
 ## Run locally
 
 Requires Node.js 24 and npm.

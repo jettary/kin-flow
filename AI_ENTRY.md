@@ -14,6 +14,7 @@ The existing public `/terms` page describes AI data handling and financial-recor
 
 ## Data and reliability
 
+- Gemini receives a standard JSON Schema through `generationConfig.responseJsonSchema`, with lowercase types and explicit string/null unions. The response remains an object containing `operations`; amounts are strings. The provider schema omits `maxItems` to keep constrained generation simple; the prompt and strict server validator still enforce the 20-operation limit and reject oversized responses without truncation.
 - Only submitted text/audio, eligible entity names and scope, account currencies, family base currency and family date/timezone are sent. Opaque references replace database IDs. Account/category usage is computed locally and only affects ordering; transaction history, balances, bank metadata and other members' private entities are not sent.
 - Inputs and unconfirmed cards remain in memory only. Text/audio are cleared when submitted; no prompts, recordings or unconfirmed drafts are stored in the database, browser storage, application logs or Gemini Files API. The recorded audio preview URL is revoked after use. Confirmed transaction fields follow the existing record/audit lifecycle.
 - The monthly cap is **1,000 outbound Gemini attempts across the application's shared database**, not per user or family. An atomic database reservation prevents concurrent instances exceeding the cap. UTC calendar months define reset boundaries. Failed and timed-out attempts consume a reservation, because the provider may already have received them. There are no automatic Gemini retries. Use the same database across application instances if they share this cap.
@@ -29,6 +30,7 @@ The existing public `/terms` page describes AI data handling and financial-recor
 
 ## Google references
 
+- [GenerateContent response schema parameters](https://ai.google.dev/api/generate-content#v1beta.GenerationConfig)
 - [Gemini 3.5 Flash-Lite model capabilities](https://ai.google.dev/gemini-api/docs/models/gemini-3.5-flash-lite)
 - [Pricing and free-tier availability](https://ai.google.dev/gemini-api/docs/pricing)
 - [Model access and deprecations](https://ai.google.dev/gemini-api/docs/deprecations)

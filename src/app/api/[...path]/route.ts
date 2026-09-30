@@ -29,6 +29,7 @@ import {
 } from '@/server/service';
 import { acceptAiNotice, aiStatus, prepareAi } from '@/server/ai';
 import { refreshRates } from '@/server/rates';
+import { kofiUrl } from '@/server/support';
 import { seedDemo } from '@/server/demo';
 import {
   deliverPush,
@@ -94,7 +95,11 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
       method = request.method;
     if (method !== 'GET') sameOrigin(request);
     if (key === 'config')
-      return json({ demo: demoEnabled(), google: !!process.env.GOOGLE_CLIENT_ID });
+      return json({
+        demo: demoEnabled(),
+        google: !!process.env.GOOGLE_CLIENT_ID,
+        kofiUrl: kofiUrl(),
+      });
     const db = await getDB();
     if ((key === 'cron/rates' || key === 'cron/push') && method === 'GET') {
       const expected = 'Bearer ' + process.env.CRON_SECRET,

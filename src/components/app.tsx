@@ -48,14 +48,15 @@ export default function KinflowApp() {
     [scope, setScope] = useState<Scope>('shared'),
     [dialog, setDialog] = useState<Dialog>(null),
     [toast, setToast] = useState(''),
-    [config, setConfig] = useState<{ demo: boolean; google: boolean }>({
+    [config, setConfig] = useState<{ demo: boolean; google: boolean; kofiUrl: string | null }>({
       demo: false,
       google: false,
+      kofiUrl: null,
     }),
     [loginBusy, setLoginBusy] = useState(false);
   usePush(app);
   useEffect(() => {
-    void api<{ demo: boolean; google: boolean }>('config')
+    void api<{ demo: boolean; google: boolean; kofiUrl: string | null }>('config')
       .then(setConfig)
       .catch(() => {});
     const p = new URLSearchParams(window.location.search);
@@ -485,6 +486,18 @@ export default function KinflowApp() {
               <Icon name="leaf" size={13} /> A little clarity goes a long way.
             </span>
             <Link href="/terms">Terms of Use</Link>
+            {config.kofiUrl && (
+              <a
+                className="coffee-link"
+                href={config.kofiUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Buy the developer a coffee on Ko-fi (opens in a new tab)"
+              >
+                <Icon name="coffee" size={16} />
+                Buy the developer a coffee
+              </a>
+            )}
             {app.demo && <span>Local demo · Sample data</span>}
             {s?.rates && <span>Rates updated {s.rates.date}</span>}
           </footer>

@@ -906,6 +906,8 @@ pre {
 }
 .page-footer {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   justify-content: space-between;
   gap: 15px;
   margin: 27px 2px 0;
@@ -916,6 +918,18 @@ pre {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+.page-footer > .coffee-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  min-height: 44px;
+  padding: 6px 10px;
+  border: 1px solid var(--muted);
+  border-radius: 8px;
+  color: var(--ink);
+  font-size: 12px;
+  text-decoration: none;
 }
 .page-footer > a,
 .signin-terms a,

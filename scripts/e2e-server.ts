@@ -21,8 +21,17 @@ await db.query(
   "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '1 hour')",
   [createHash('sha256').update(pushToken).digest('hex'), user.id],
 );
+// The app scenario signs out and revokes its token. Support scenarios need an
+// independent session so their result does not depend on which suite ran first.
+const supportToken = randomBytes(32).toString('base64url');
+await db.query(
+  "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '1 hour')",
+  [createHash('sha256').update(supportToken).digest('hex'), user.id],
+);
 await mkdir('.local', { recursive: true });
-await writeFile('.local/e2e-session.json', JSON.stringify({ token, pushToken }), { mode: 0o600 });
+await writeFile('.local/e2e-session.json', JSON.stringify({ token, pushToken, supportToken }), {
+  mode: 0o600,
+});
 const server = new PGLiteSocketServer({
   db: pg,
   host: '127.0.0.1',

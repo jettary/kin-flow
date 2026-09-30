@@ -3,7 +3,7 @@ import { readFile } from 'node:fs/promises';
 
 test.beforeEach(async ({ context, page }) => {
   if (test.info().project.use.baseURL?.includes('3100')) {
-    const { token } = JSON.parse(await readFile('.local/e2e-session.json', 'utf8'));
+    const { supportToken: token } = JSON.parse(await readFile('.local/e2e-session.json', 'utf8'));
     await context.addCookies([
       {
         name: 'kinflow_session',
@@ -26,7 +26,8 @@ test('support stays hidden when no Ko-fi page is configured', async ({ page }) =
   if (!test.info().project.use.baseURL?.includes('3100')) {
     await page.getByRole('button', { name: 'Explore with sample data' }).click();
   }
-  await expect(page.getByRole('link', { name: 'Terms of Use' })).toBeVisible();
+  // Terms of Use also exists on the sign-in screen; require an authenticated app.
+  await expect(page.getByRole('heading', { name: 'A little clarity, every day.' })).toBeVisible();
   await expect(page.getByRole('link', { name: /Buy the developer a coffee/ })).toHaveCount(0);
 });
 
@@ -49,6 +50,7 @@ test('support works on desktop and mobile without navigating away from KinFlow',
     await page.getByRole('button', { name: 'Explore with sample data' }).click();
   }
   const link = page.getByRole('link', { name: /Buy the developer a coffee/ });
+  await expect(page.getByRole('heading', { name: 'A little clarity, every day.' })).toBeVisible();
   await expect(link).toBeVisible();
   await expect(link).toHaveAttribute('rel', 'noopener noreferrer');
   await page.setViewportSize({ width: 375, height: 812 });

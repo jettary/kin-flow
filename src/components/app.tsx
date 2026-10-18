@@ -12,6 +12,7 @@ import {
   AccountDetail,
   Accounts,
   Activity,
+  CategoryDetail,
   Dashboard,
   Insights,
   TransactionDetail,
@@ -29,6 +30,7 @@ type Dialog =
     }
   | { kind: 'entity'; entityType: 'account' | 'expense' | 'source'; entity?: Entity }
   | { kind: 'budget'; category: Entity }
+  | { kind: 'category'; category: Entity }
   | { kind: 'detail'; transaction: Transaction }
   | { kind: 'account'; entity: Entity }
   | { kind: 'onboarding' }
@@ -118,6 +120,7 @@ export default function KinflowApp() {
     detail: (transaction) => setDialog({ kind: 'detail', transaction }),
     entity: (entityType, entity) => setDialog({ kind: 'entity', entityType, entity }),
     budget: (category) => setDialog({ kind: 'budget', category }),
+    category: (category) => setDialog({ kind: 'category', category }),
     account: (entity) => setDialog({ kind: 'account', entity }),
     toast: setToast,
   };
@@ -552,6 +555,15 @@ export default function KinflowApp() {
           kind={dialog.entityType}
         />
       )}{' '}
+      {s && dialog?.kind === 'category' && (
+        <CategoryDetail
+          app={app}
+          category={dialog.category}
+          scope={scope}
+          onClose={() => setDialog(null)}
+          actions={actions}
+        />
+      )}
       {s && dialog?.kind === 'budget' && (
         <BudgetForm
           app={app}

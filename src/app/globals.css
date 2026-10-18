@@ -1431,6 +1431,10 @@ pre {
   flex-wrap: wrap;
   gap: 8px;
 }
+.category-detail > .privacy {
+  color: var(--text-secondary);
+  align-self: flex-start;
+}
 .tag-list {
   display: flex;
   gap: 6px;

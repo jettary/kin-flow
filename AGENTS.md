@@ -1,6 +1,14 @@
 # NEVER READ `.env.*` files
 With only one exception: `.env.example` is always read, and is never committed.
 
+# Before creating a pull request
+
+Run the complete test suite before creating any PR: `npm run check` and
+`npm run test:production`. Do not filter tests by file, test name, or the new
+feature; feature-specific checks alone are not sufficient. Fix any failures
+before opening the PR. If an environment limitation prevents a full run, report
+the limitation explicitly and do not claim that all checks passed.
+
 <!-- BEGIN:nextjs-agent-rules -->
 
 # This is NOT the Next.js you know

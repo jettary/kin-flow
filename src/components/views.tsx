@@ -22,6 +22,7 @@ export type Actions = {
   detail: (t: Transaction) => void;
   entity: (kind: 'account' | 'expense' | 'source', entity?: Entity) => void;
   budget: (category: Entity) => void;
+  category: (category: Entity) => void;
   account: (e: Entity) => void;
   toast: (m: string) => void;
 };
@@ -170,9 +171,7 @@ export function Budgets({
               <button
                 key={category.id}
                 className="budget-item"
-                onClick={() => {
-                  if (canManage(category, s.family.role, app.user!.id)) actions.budget(category);
-                }}
+                onClick={() => actions.category(category)}
                 aria-label={`${category.name} budget: ${state.status}`}
               >
                 <div className="budget-heading">
@@ -1109,6 +1108,73 @@ export function TransactionDetail({
           </>
         )}
         <ErrorMessage message={error} />
+      </div>
+    </Modal>
+  );
+}
+export function CategoryDetail({
+  app,
+  category,
+  scope,
+  onClose,
+  actions,
+}: {
+  app: Kinflow;
+  category: Entity;
+  scope: Scope;
+  onClose: () => void;
+  actions: Actions;
+}) {
+  const s = app.snapshot!,
+    today = localDate(s.family.timezone),
+    [month, setMonth] = useState(today.slice(0, 7)),
+    current = s.entities.find((e) => e.id === category.id) || category,
+    budget = budgetFor(s.entities, current.id, month),
+    rows = s.transactions
+      .filter(
+        (t) =>
+          !t.deleted &&
+          !t.redacted &&
+          t.categoryId === current.id &&
+          ['expense', 'refund'].includes(t.type) &&
+          t.date.startsWith(month) &&
+          inScope(t, scope, app.user!.id),
+      )
+      .sort((a, b) => b.date.localeCompare(a.date) || b.version - a.version),
+    state = budget && !budget.archived ? budgetState(budget, rows, month, today) : null;
+  return (
+    <Modal title={current.name} onClose={onClose}>
+      <div className="form-stack category-detail">
+        <Privacy personal={!!current.ownerId} />
+        <MonthPicker month={month} onChange={setMonth} />
+        {state && (
+          <dl className="detail-list">
+            <div>
+              <dt>Spent this month</dt>
+              <dd>{money(state.spent, budget!.currency)}</dd>
+            </div>
+            <div>
+              <dt>Monthly limit</dt>
+              <dd>{money(budget!.limit, budget!.currency)}</dd>
+            </div>
+          </dl>
+        )}
+        {state?.missing && <p className="notice">Some conversions unavailable</p>}
+        {canManage(current, s.family.role, app.user!.id) && (
+          <button className="secondary" onClick={() => actions.budget(current)}>
+            <Icon name="edit" size={16} /> Edit budget
+          </button>
+        )}
+        <h3>
+          Transactions <span className="count">{rows.length}</span>
+        </h3>
+        {rows.length ? (
+          <TransactionRows app={app} transactions={rows} onClick={actions.detail} />
+        ) : (
+          <Empty title="No transactions this month">
+            Expenses and refunds in this category will appear here. Try another month.
+          </Empty>
+        )}
       </div>
     </Modal>
   );

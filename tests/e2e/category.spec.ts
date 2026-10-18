@@ -5,11 +5,11 @@ import type { Snapshot } from '../../src/lib/model';
 
 test.beforeEach(async ({ page, context }) => {
   if (test.info().project.use.baseURL?.includes('3100')) {
-    const { supportToken } = JSON.parse(await readFile('.local/e2e-session.json', 'utf8'));
+    const { categoryToken } = JSON.parse(await readFile('.local/e2e-session.json', 'utf8'));
     await context.addCookies([
       {
         name: 'kinflow_session',
-        value: supportToken,
+        value: categoryToken,
         url: 'http://127.0.0.1:3100',
         httpOnly: true,
         sameSite: 'Lax',

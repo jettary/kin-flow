@@ -28,10 +28,20 @@ await db.query(
   "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '1 hour')",
   [createHash('sha256').update(supportToken).digest('hex'), user.id],
 );
+// Category history needs a separate family: AI scenarios save dated entries in
+// the main family's history before the category scenarios run.
+const categoryUser = await seedDemo(db);
+const categoryToken = randomBytes(32).toString('base64url');
+await db.query(
+  "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '1 hour')",
+  [createHash('sha256').update(categoryToken).digest('hex'), categoryUser.id],
+);
 await mkdir('.local', { recursive: true });
-await writeFile('.local/e2e-session.json', JSON.stringify({ token, pushToken, supportToken }), {
-  mode: 0o600,
-});
+await writeFile(
+  '.local/e2e-session.json',
+  JSON.stringify({ token, pushToken, supportToken, categoryToken }),
+  { mode: 0o600 },
+);
 const server = new PGLiteSocketServer({
   db: pg,
   host: '127.0.0.1',

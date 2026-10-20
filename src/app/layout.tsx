@@ -7,7 +7,7 @@ export const metadata: Metadata = {
   appleWebApp: { capable: true, statusBarStyle: 'default', title: 'KinFlow' },
   icons: { icon: '/icon.svg', apple: '/icon-192.png' },
 };
-export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#254f42' };
+export const viewport: Viewport = { width: 'device-width', initialScale: 1, themeColor: '#702720' };
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">

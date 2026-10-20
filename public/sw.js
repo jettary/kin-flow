@@ -1,6 +1,6 @@
 /* Only the public application shell is HTTP cached. API responses, OAuth,
    sessions and financial payloads are deliberately excluded. */
-const CACHE = 'kinflow-shell-v3';
+const CACHE = 'kinflow-shell-v4';
 async function cacheShell() {
   const cache = await caches.open(CACHE);
   const response = await fetch('/');

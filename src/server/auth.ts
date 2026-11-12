@@ -62,6 +62,10 @@ export async function setSession(db: DB, userId: string, response: NextResponse)
     maxAge: 30 * 86400,
   });
 }
+// Only the MCP consent page may be resumed after sign-in; anything else lands on the app.
+const returnCookie = 'kinflow_return';
+const safeReturn = (value: string | null | undefined) =>
+  value?.startsWith('/oauth/authorize?') ? value : null;
 export async function beginGoogle(db: DB, request: NextRequest) {
   const client = oauth(request),
     state = randomBytes(32).toString('base64url'),
@@ -89,6 +93,15 @@ export async function beginGoogle(db: DB, request: NextRequest) {
     path: '/',
     maxAge: 600,
   });
+  const returnTo = safeReturn(request.nextUrl.searchParams.get('returnTo'));
+  if (returnTo)
+    response.cookies.set(returnCookie, returnTo, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 600,
+    });
   return response;
 }
 export async function finishGoogle(db: DB, request: NextRequest) {
@@ -130,8 +143,10 @@ export async function finishGoogle(db: DB, request: NextRequest) {
       [randomUUID(), payload.sub, payload.name || 'Family member', payload.picture || null],
     )
   ).rows[0];
-  const response = NextResponse.redirect(appURL(request) + '/');
+  const returnTo = safeReturn(request.cookies.get(returnCookie)?.value);
+  const response = NextResponse.redirect(appURL(request) + (returnTo || '/'));
   response.cookies.delete('kinflow_oauth');
+  response.cookies.delete(returnCookie);
   await setSession(db, u.id, response);
   return response;
 }

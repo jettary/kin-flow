@@ -7,6 +7,8 @@ export interface User {
   avatar?: string;
   theme?: 'system' | 'light' | 'dark';
   dateFormat?: 'dmy' | 'mdy' | 'iso';
+  // Name of the connected assistant acting for the user; appended to audit actions.
+  via?: string;
 }
 export interface Family {
   id: string;

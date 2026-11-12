@@ -28,6 +28,7 @@ import {
   saveAiBatch,
 } from '@/server/service';
 import { acceptAiNotice, aiStatus, prepareAi } from '@/server/ai';
+import { listGrants, revokeGrant } from '@/server/oauth';
 import { refreshRates } from '@/server/rates';
 import { kofiUrl } from '@/server/support';
 import { seedDemo } from '@/server/demo';
@@ -187,6 +188,11 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
       const response = json({ ok: true });
       response.cookies.delete(sessionCookie);
       return response;
+    }
+    if (key === 'me/assistants' && method === 'GET') return json(await listGrants(db, user.id));
+    if (path[0] === 'me' && path[1] === 'assistants' && path[2] && method === 'DELETE') {
+      await revokeGrant(db, user.id, path[2]);
+      return json({ ok: true });
     }
     if (key === 'families' && method === 'POST')
       return json(await createFamily(db, user, await body(request)), 201);

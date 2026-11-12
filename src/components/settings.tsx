@@ -1,6 +1,7 @@
 'use client';
 import { useState } from 'react';
 import { NotificationSettings } from './notification-settings';
+import { ConnectedAssistants } from './connected-assistants';
 import { api, clearCache, clearFamily } from '@/lib/offline';
 import { canManage, type Entity, type User } from '@/lib/model';
 import { budgetFor } from '@/lib/analytics';
@@ -57,6 +58,7 @@ export function SettingsView({ app, actions }: { app: Kinflow; actions: Actions 
     ['invitations', 'gift', 'Invitations'],
     ['preferences', 'settings', 'Your preferences'],
     ['notifications', 'settings', 'Notifications'],
+    ['assistants', 'bot', 'Connected assistants'],
   ];
   return (
     <div className="settings-layout">
@@ -78,6 +80,7 @@ export function SettingsView({ app, actions }: { app: Kinflow; actions: Actions 
       </nav>
       <section className="card settings-panel">
         <ErrorMessage message={error} />
+        {section === 'assistants' && <ConnectedAssistants />}
         {section === 'notifications' && (
           <NotificationSettings
             key={s.family.id}

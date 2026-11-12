@@ -36,10 +36,16 @@ await db.query(
   "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '1 hour')",
   [createHash('sha256').update(categoryToken).digest('hex'), categoryUser.id],
 );
+// MCP consent scenario disconnects its assistant; it gets its own session too.
+const mcpToken = randomBytes(32).toString('base64url');
+await db.query(
+  "INSERT INTO sessions(token_hash,user_id,expires_at) VALUES($1,$2,now()+interval '1 hour')",
+  [createHash('sha256').update(mcpToken).digest('hex'), user.id],
+);
 await mkdir('.local', { recursive: true });
 await writeFile(
   '.local/e2e-session.json',
-  JSON.stringify({ token, pushToken, supportToken, categoryToken }),
+  JSON.stringify({ token, pushToken, supportToken, categoryToken, mcpToken }),
   { mode: 0o600 },
 );
 const server = new PGLiteSocketServer({

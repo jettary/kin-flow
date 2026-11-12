@@ -1551,6 +1551,17 @@ pre {
   padding: 12px 0;
   margin: 0;
 }
+.assistant-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.assistant-row p {
+  margin: 2px 0 0;
+}
 .subsection-title {
   margin: 30px 0 14px;
 }

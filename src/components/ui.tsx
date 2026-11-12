@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  Bot,
   ArrowDownLeft,
   ArrowUpRight,
   ArrowLeftRight,
@@ -72,6 +73,7 @@ const icons: Record<string, LucideIcon> = {
   sync: RefreshCw,
   logout: LogOut,
   users: Users,
+  bot: Bot,
   settings: Settings,
   card: CreditCard,
   landmark: Landmark,

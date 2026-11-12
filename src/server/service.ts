@@ -209,7 +209,7 @@ async function getEntity(
   requireThat(row && (!kind || row.kind === kind), 'This item is unavailable.', 404);
   return mapEntity(row);
 }
-async function getTx(db: DB, userId: string, familyId: string, id: unknown) {
+export async function getTx(db: DB, userId: string, familyId: string, id: unknown) {
   uuid.parse(id);
   const row = (
     await db.query<TxRow>(
@@ -223,7 +223,7 @@ async function getTx(db: DB, userId: string, familyId: string, id: unknown) {
 async function audit(
   db: DB,
   familyId: string,
-  userId: string,
+  actor: User,
   objectId: string,
   ownerId: string | null,
   action: string,
@@ -238,8 +238,8 @@ async function audit(
       familyId,
       objectId,
       ownerId,
-      userId,
-      action,
+      actor.id,
+      actor.via ? `${action} via ${actor.via}` : action,
       JSON.stringify(before),
       JSON.stringify(after),
       conflict,
@@ -444,10 +444,7 @@ async function applyMutation(
     await putEntity(db, e);
     if (!old && v.kind === 'account')
       await writeLedger(db, familyId, id, null, v.openingBalance || '0', true);
-    await audit(
-      db,
-      familyId,
-      user.id,
+    await audit(db, familyId, user,
       id,
       e.ownerId,
       old ? 'Item updated' : 'Item created',
@@ -477,7 +474,7 @@ async function applyMutation(
       "DELETE FROM entities WHERE family_id=$1 AND kind='budget' AND data->>'categoryId'=$2",
       [familyId, e.id],
     );
-    await audit(db, familyId, user.id, e.id, e.ownerId, 'Item deleted', e, null);
+    await audit(db, familyId, user, e.id, e.ownerId, 'Item deleted', e, null);
     resultId = e.id;
   } else if (m.command === 'entity.move') {
     const v = z.object({ id: uuid, direction: z.enum(['up', 'down']) }).parse(m.input);
@@ -493,7 +490,7 @@ async function applyMutation(
       for (let i = 0; i < list.length; i++) await putEntity(db, { ...list[i], order: i, version });
     }
     resultId = e.id;
-    await audit(db, familyId, user.id, e.id, e.ownerId, 'Order changed', null, v);
+    await audit(db, familyId, user, e.id, e.ownerId, 'Order changed', null, v);
   } else if (m.command === 'budget.save') {
     const v = z
       .object({
@@ -535,7 +532,7 @@ async function applyMutation(
       ...v,
     };
     await putEntity(db, e);
-    await audit(db, familyId, user.id, e.id, e.ownerId, 'Budget changed', old, e);
+    await audit(db, familyId, user, e.id, e.ownerId, 'Budget changed', old, e);
     resultId = e.id;
   } else if (m.command === 'transaction.save') {
     const v = transactionSchema.parse(m.input);
@@ -734,10 +731,7 @@ async function applyMutation(
       if (batchEvents) batchEvents.push(operation);
       else await enqueuePush(db, familyId, user.id, m.id, [operation]);
     }
-    await audit(
-      db,
-      familyId,
-      user.id,
+    await audit(db, familyId, user,
       id,
       ownerId,
       old ? 'Transaction edited' : 'Transaction recorded',
@@ -763,10 +757,7 @@ async function applyMutation(
       familyId,
     ]);
     await db.query('DELETE FROM ledger WHERE transaction_id=$1', [old.id]);
-    await audit(
-      db,
-      familyId,
-      user.id,
+    await audit(db, familyId, user,
       old.id,
       old.ownerId,
       'Transaction deleted',
@@ -785,7 +776,7 @@ async function applyMutation(
       v.timezone,
       familyId,
     ]);
-    await audit(db, familyId, user.id, familyId, null, 'Family settings changed', family, v);
+    await audit(db, familyId, user, familyId, null, 'Family settings changed', family, v);
   } else if (m.command === 'member.role') {
     admin();
     const v = z.object({ userId: uuid, role: z.enum(['admin', 'member']) }).parse(m.input);
@@ -801,7 +792,7 @@ async function applyMutation(
       familyId,
       v.userId,
     ]);
-    await audit(db, familyId, user.id, v.userId, null, 'Role changed', member, v);
+    await audit(db, familyId, user, v.userId, null, 'Role changed', member, v);
   } else if (m.command === 'family.transfer') {
     requireThat(family.role === 'owner', 'Only the owner can transfer ownership.', 403);
     const to = uuid.parse(m.input.userId);
@@ -823,10 +814,7 @@ async function applyMutation(
       familyId,
       to,
     ]);
-    await audit(
-      db,
-      familyId,
-      user.id,
+    await audit(db, familyId, user,
       familyId,
       null,
       'Ownership transferred',

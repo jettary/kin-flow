@@ -48,7 +48,7 @@ export default function PrivacyPage() {
             </p>
             <p>
               <strong>Settings.</strong> Display name, appearance and date format, your chosen scope
-              per family, notification preferences and whether you have read the AI notice.
+              per family and notification preferences.
             </p>
             <p>
               <strong>Sign-in and security.</strong> A session cookie and, for connected assistants,
@@ -74,9 +74,9 @@ export default function PrivacyPage() {
               We use this data to provide KinFlow: to sign you in, keep your records, calculate
               balances, budgets and reports, synchronize your devices, show shared records to your
               family, and keep the service secure. The legal basis is performance of our agreement
-              with you and our legitimate interest in operating a secure service. Optional AI
-              assistance, notifications and connected assistants are based on your choice to turn
-              them on; you can stop using them at any time.
+              with you and our legitimate interest in operating a secure service. Notifications and
+              connected assistants are based on your choice to turn them on; you can stop using them
+              at any time.
             </p>
           </section>
 
@@ -96,18 +96,6 @@ export default function PrivacyPage() {
             <p>
               <strong>Service providers.</strong> Vercel hosts the application and Neon hosts its
               database. Google provides sign-in. These providers process data on our behalf.
-            </p>
-            <p>
-              <strong>Google Gemini, only if you use AI assistance.</strong> The text or audio you
-              submit and the names, visibility and currencies of your eligible accounts, categories
-              and income sources are sent to Google. It is processed under Google’s unpaid Gemini
-              API terms, under which Google may use it to improve its products and people may review
-              it. Transaction history is not sent. KinFlow does not store your submitted text or
-              audio. See{' '}
-              <a href="https://ai.google.dev/gemini-api/terms" rel="noopener noreferrer">
-                Google’s Gemini API terms
-              </a>
-              .
             </p>
             <p>
               <strong>Push services, only if you enable notifications.</strong> Notifications are

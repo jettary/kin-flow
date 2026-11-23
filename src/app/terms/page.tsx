@@ -18,7 +18,8 @@ export default function TermsPage() {
           <h1>Terms of Use</h1>
           <p className="terms-intro">
             KinFlow is a tool for keeping personal and family financial records. The following terms
-            explain what those records represent and how they should be used.
+            explain what those records represent and how they should be used. How personal data is
+            handled is described in the <Link href="/privacy">Privacy Policy</Link>.
           </p>
 
           <section>
@@ -81,13 +82,13 @@ export default function TermsPage() {
           <section>
             <h2>6. Connected AI assistants</h2>
             <p>
-              You may connect a third-party AI assistant, such as Claude or ChatGPT, to KinFlow.
-              A connected assistant acts as you, with your role in each of your families: it can
-              read the accounts, transactions, budgets and history you can see and, if you allow
-              changes, record and change entries on your behalf. Data it reads is sent to the
-              assistant’s provider and handled under that provider’s terms, not KinFlow’s. Changes
-              it makes are attributed to you and marked with the assistant’s name in the history.
-              You can disconnect an assistant at any time in Settings → Connected assistants.
+              You may connect a third-party AI assistant, such as Claude or ChatGPT, to KinFlow. A
+              connected assistant acts as you, with your role in each of your families: it can read
+              the accounts, transactions, budgets and history you can see and, if you allow changes,
+              record and change entries on your behalf. Data it reads is sent to the assistant’s
+              provider and handled under that provider’s terms, not KinFlow’s. Changes it makes are
+              attributed to you and marked with the assistant’s name in the history. You can
+              disconnect an assistant at any time in Settings → Connected assistants.
             </p>
           </section>
 

@@ -25,9 +25,7 @@ import {
   listFamilies,
   mutate,
   readSnapshot,
-  saveAiBatch,
 } from '@/server/service';
-import { acceptAiNotice, aiStatus, prepareAi } from '@/server/ai';
 import { listGrants, revokeGrant } from '@/server/oauth';
 import { refreshRates } from '@/server/rates';
 import { kofiUrl } from '@/server/support';
@@ -213,19 +211,6 @@ async function handle(request: NextRequest, { params }: { params: Promise<{ path
     if (path[0] === 'families' && path[1]) {
       const familyId = path[1],
         action = path[2];
-      if (action === 'ai' && path.length === 4) {
-        if (path[3] === 'status' && method === 'GET')
-          return json(await aiStatus(db, user.id, familyId));
-        if (path[3] === 'accept' && method === 'POST')
-          return json(await acceptAiNotice(db, user.id, familyId));
-        if (path[3] === 'prepare' && method === 'POST')
-          return json(await prepareAi(db, user.id, familyId, await body(request, 2700000)));
-        if (path[3] === 'save' && method === 'POST') {
-          const result = await saveAiBatch(db, user, familyId, await body(request));
-          schedulePush(db);
-          return json(result);
-        }
-      }
       if (action === 'notifications' && (method === 'GET' || method === 'PATCH'))
         return json({
           publicKey: pushConfig()?.publicKey || null,

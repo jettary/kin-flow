@@ -46,7 +46,7 @@ describe('service worker push behavior', () => {
         }),
       },
     });
-    expect(w.self.registration.showNotification).toHaveBeenCalledWith('Новая транзакция', {
+    expect(w.self.registration.showNotification).toHaveBeenCalledWith('New transaction', {
       icon: '/icon-192.png',
       badge: '/icon-192.png',
       tag: 'event',

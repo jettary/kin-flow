@@ -62,24 +62,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2>5. Optional AI assistance</h2>
-            <p>
-              If you use optional AI assistance, the text or audio you choose to submit, together
-              with limited account and category context, is sent to Google Gemini for processing.
-              Under Google’s unpaid API terms, submitted content and responses may be used to
-              improve Google products and may be reviewed by people. Do not submit sensitive,
-              confidential, or identifying information. Review every suggested entry before saving
-              it. KinFlow’s deletion of its copy of an input does not control Google’s handling of
-              that input. See{' '}
-              <a href="https://ai.google.dev/gemini-api/terms" rel="noopener noreferrer">
-                Google’s Gemini API terms
-              </a>
-              .
-            </p>
-          </section>
-
-          <section>
-            <h2>6. Connected AI assistants</h2>
+            <h2>5. Connected AI assistants</h2>
             <p>
               You may connect a third-party AI assistant, such as Claude or ChatGPT, to KinFlow.
               A connected assistant acts as you, with your role in each of your families: it can
@@ -92,7 +75,7 @@ export default function TermsPage() {
           </section>
 
           <section>
-            <h2>7. Availability and liability</h2>
+            <h2>6. Availability and liability</h2>
             <p>
               KinFlow may be changed, interrupted, or unavailable. To the extent permitted by
               applicable law, the service is provided without a guarantee that its records or

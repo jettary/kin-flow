@@ -932,12 +932,14 @@ pre {
   text-decoration: none;
 }
 .page-footer > a,
+.page-footer > span > a,
 .signin-terms a,
 .terms-back {
   text-decoration: underline;
   text-underline-offset: 3px;
 }
 .page-footer > a:hover,
+.page-footer > span > a:hover,
 .signin-terms a:hover,
 .terms-back:hover {
   color: var(--pine);
@@ -1956,7 +1958,10 @@ pre {
 .terms-card section p {
   line-height: 1.75;
 }
-.terms-card section a {
+.terms-card section p + p {
+  margin-top: 12px;
+}
+.terms-card a {
   color: var(--pine);
   text-decoration: underline;
   text-underline-offset: 3px;

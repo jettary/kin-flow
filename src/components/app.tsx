@@ -210,7 +210,7 @@ export default function KinflowApp() {
             </div>
             <p className="signin-terms">
               KinFlow stores the records you confirm, not verified bank transactions.{' '}
-              <Link href="/terms">Terms of Use</Link>
+              <Link href="/terms">Terms of Use</Link> · <Link href="/privacy">Privacy Policy</Link>
             </p>
             {config.demo && (
               <div className="demo-entry">
@@ -488,7 +488,10 @@ export default function KinflowApp() {
             <span>
               <Icon name="leaf" size={13} /> A little clarity goes a long way.
             </span>
-            <Link href="/terms">Terms of Use</Link>
+            <span>
+              <Link href="/terms">Terms of Use</Link>
+              <Link href="/privacy">Privacy Policy</Link>
+            </span>
             {config.kofiUrl && (
               <a
                 className="coffee-link"

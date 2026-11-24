@@ -239,7 +239,7 @@ export async function deliverPush(db: Database, send: PushSender = webpush.sendN
               JSON.stringify({
                 familyId: job.family_id,
                 notificationId: job.id,
-                title: job.changed ? 'Изменение в семейных финансах' : 'Новая транзакция',
+                title: job.changed ? 'Family finances updated' : 'New transaction',
               }),
               { vapidDetails: config, TTL: 3600, urgency: 'normal', timeout: 10000 },
             );

@@ -134,7 +134,7 @@ describe('push event selection and atomic outbox', () => {
     expect(requests[0].method).toBe('POST');
     expect(requests[0].headers['Content-Encoding']).toBe('aes128gcm');
     expect(requests[0].headers.Authorization).toMatch(/^vapid /);
-    expect(requests[0].body?.toString()).not.toContain('Новая транзакция');
+    expect(requests[0].body?.toString()).not.toContain('New transaction');
     expect(await queue()).toHaveLength(0);
   });
 
@@ -160,7 +160,7 @@ describe('push event selection and atomic outbox', () => {
     expect(payload).toEqual({
       familyId: family.id,
       notificationId: expect.any(String),
-      title: 'Новая транзакция',
+      title: 'New transaction',
     });
     expect(sender.mock.calls[0][0].endpoint).toBe(endpoint);
     await write('transaction.save', expense(), mutationId);
@@ -203,9 +203,7 @@ describe('push event selection and atomic outbox', () => {
     const sender = send();
     await deliverPush(db, sender);
     expect(
-      sender.mock.calls.every(
-        (call) => JSON.parse(call[1]).title === 'Изменение в семейных финансах',
-      ),
+      sender.mock.calls.every((call) => JSON.parse(call[1]).title === 'Family finances updated'),
     ).toBe(true);
   });
   it('redacts mixed transfers and source deposits and never queues solely personal records', async () => {

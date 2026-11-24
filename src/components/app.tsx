@@ -19,7 +19,6 @@ import {
   type Actions,
 } from './views';
 import { SettingsView } from './settings';
-import { AiEntry, GeminiIcon } from './ai-entry';
 type Dialog =
   | {
       kind: 'transaction';
@@ -34,7 +33,6 @@ type Dialog =
   | { kind: 'detail'; transaction: Transaction }
   | { kind: 'account'; entity: Entity }
   | { kind: 'onboarding' }
-  | { kind: 'ai' }
   | null;
 const navigation = [
   ['home', 'home', 'Home'],
@@ -381,15 +379,6 @@ export default function KinflowApp() {
                 <Icon name="plus" size={19} />
                 <span>Add transaction</span>
               </button>
-              <button
-                className="ai-entry-button"
-                aria-label="Add with AI"
-                title="Add with AI"
-                disabled={!s}
-                onClick={() => setDialog({ kind: 'ai' })}
-              >
-                <GeminiIcon />
-              </button>
             </div>
           </div>
           {page !== 'more' && (
@@ -529,14 +518,6 @@ export default function KinflowApp() {
             <Icon name="x" size={16} />
           </button>
         </div>
-      )}
-      {s && dialog?.kind === 'ai' && (
-        <AiEntry
-          app={app}
-          onClose={() => setDialog(null)}
-          onManual={() => setDialog({ kind: 'transaction' })}
-          onSaved={setToast}
-        />
       )}
       {s && dialog?.kind === 'transaction' && (
         <TransactionForm

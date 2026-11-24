@@ -111,7 +111,7 @@ self.addEventListener('push', (event) => {
       // visible after the server has already handed the message to the push service.
       if (windows.some((client) => client.visibilityState === 'visible')) return;
       await self.registration.showNotification(
-        payload.title === 'Изменение в семейных финансах' ? payload.title : 'Новая транзакция',
+        payload.title === 'Family finances updated' ? payload.title : 'New transaction',
         {
           icon: '/icon-192.png',
           badge: '/icon-192.png',

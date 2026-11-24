@@ -5,7 +5,6 @@ import { AppError, requireThat } from './errors';
 import { rates } from './rates';
 import { enqueuePush } from './push';
 import { pushEvent, type PushEvent } from '../lib/push';
-import { AI_MAX_ENTRIES } from '../lib/ai';
 import { D, convert, currencyCodes, validAmount, localDate } from '../lib/money';
 import {
   canEdit,
@@ -20,6 +19,7 @@ import {
   type Transaction,
   type User,
 } from '../lib/model';
+const BATCH_MAX_ENTRIES = 20;
 const uuid = z.string().uuid();
 const short = z.string().trim().min(1).max(100);
 const currency = z.enum(currencyCodes as [string, ...string[]]);
@@ -851,7 +851,7 @@ export async function saveAiBatch(
             .strict(),
         )
         .min(1)
-        .max(AI_MAX_ENTRIES),
+        .max(BATCH_MAX_ENTRIES),
     })
     .strict()
     .parse(input);

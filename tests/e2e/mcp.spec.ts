@@ -27,7 +27,11 @@ test('an assistant connects through the consent page and can be disconnected', a
 
   const client = await (
     await request.post('/api/oauth/register', {
-      data: { client_name: 'Test Assistant', redirect_uris: [redirect], token_endpoint_auth_method: 'none' },
+      data: {
+        client_name: 'Test Assistant',
+        redirect_uris: [redirect],
+        token_endpoint_auth_method: 'none',
+      },
     })
   ).json();
   const verifier = randomBytes(32).toString('base64url');
@@ -97,6 +101,22 @@ test('an assistant connects through the consent page and can be disconnected', a
   await expect(page.getByText(/localhost:8976 · Can make changes/)).toBeVisible();
   await page.getByRole('button', { name: 'Disconnect' }).click();
   await expect(page.getByText('No assistants are connected.')).toBeVisible();
+
+  await page.getByRole('button', { name: 'Connect MCP' }).click();
+  const serverUrl = base + '/api/mcp';
+  await expect(page.getByRole('link', { name: 'Connect to Claude' })).toHaveAttribute(
+    'href',
+    'https://claude.ai/customize/connectors?modal=add-custom-connector&connectorName=KinFlow&connectorUrl=' +
+      encodeURIComponent(serverUrl),
+  );
+  await expect(page.getByRole('link', { name: 'Connect to ChatGPT' })).toHaveAttribute(
+    'href',
+    'https://chatgpt.com/plugins',
+  );
+  await page.getByText('Using another assistant?').click();
+  await expect(page.getByRole('textbox', { name: 'MCP server URL' })).toHaveValue(serverUrl);
+  await page.getByRole('button', { name: 'Close' }).click();
+
   const revoked = await request.post('/api/mcp', {
     headers: { authorization: 'Bearer ' + tokens.access_token },
     data: {},
